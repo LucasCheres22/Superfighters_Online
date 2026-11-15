@@ -42,3 +42,11 @@
 - Projeto `superfighters` na conta lucascheres22 (time lucas-cheres-projects, plano Hobby). Producao: https://superfighters-omega.vercel.app
 - Verificado no navegador: menu carrega, SF e PeerJS carregam, sem erros no console; criacao de sala (HOSPEDAR) funciona em HTTPS (codigo gerado).
 - Ainda nao testado: entrar com o codigo a partir de outro PC/rede.
+
+## Relay para o Render (2026-11-15)
+- Pasta `relay/` (server.js + package.json, depende de `ws`). Salas por codigo (`?room=CODE&role=host|guest`); repassa mensagens do outro lado; health check em `/`.
+- `src/net.js`: se `window.SF_RELAY_URL` estiver definido (ex.: `wss://superfighters-relay.onrender.com`), host/join usam o relay (WebSocket) com a mesma interface de conexao; senao segue o PeerJS (P2P).
+- `render.yaml` (raiz do projeto): blueprint do Render com `rootDir: relay`, plano free.
+- Teste local (2 abas, relay em ws://localhost:8787): pareamento ok, RTT medido pelo relay, lockstep identico nos ticks 260-532 (sem combate).
+- Correcoes no caminho do online: (1) boot do menu nao inicia a demonstracao quando ja ha conexao; (2) SF.hideMenu exposto para testes (o menu aberto engole teclas e pode iniciar uma partida local).
+- Ainda nao validado: dessincronia relatada entre dois PCs reais (possivel causa: diferencas de motor/CPU em Math.sin/cos ou latencia). Proximo teste: partida com combate em dois PCs diferentes.

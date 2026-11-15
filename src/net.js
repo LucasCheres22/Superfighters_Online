@@ -39,13 +39,51 @@ window.SF = window.SF || {};
     conn.on("error", function (e) { if (onError) onError(e); });
   }
 
+  // ---------- transporte por RELAY (WebSocket num servidor nosso: relay/server.js) ----------
+  // Usado quando window.SF_RELAY_URL esta definido (ex.: "wss://superfighters-relay.onrender.com"). Nao depende da PeerJS
+  // nem de NAT: os dois lados so abrem uma conexao de saida pro relay. Mesma interface de conexao usada pelo wireConn.
+  var relayWs = null;
+  function relayBase() { var u = window.SF_RELAY_URL; return u ? String(u).replace(/\/+$/, "") : null; }
+  function RelayConn(ws) {
+    var self = this, handlers = { open: [], data: [], close: [], error: [] };
+    this.open = false;
+    this.on = function (ev, cb) { if (handlers[ev]) handlers[ev].push(cb); };
+    this.emit = function (ev, arg) { (handlers[ev] || []).forEach(function (cb) { try { cb(arg); } catch (e) {} }); };
+    this.send = function (obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+    this.close = function () { try { ws.close(); } catch (e) {} };
+    ws.onmessage = function (ev) {
+      var msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg && msg.type === "sys") {
+        if (msg.ev === "paired" && !self.open) { self.open = true; self.emit("open"); }
+        else if (msg.ev === "peer_left") { if (self.open) { self.open = false; self.emit("close"); } }
+        else if (msg.ev === "erro") { self.emit("error", msg.motivo || "erro_relay"); }
+        return;
+      }
+      self.emit("data", msg);
+    };
+    ws.onerror = function () { self.emit("error", "relay_falhou"); };
+    ws.onclose = function () { if (self.open) { self.open = false; } self.emit("close"); };
+  }
+  function relayOpen(code, role) {
+    var base = relayBase(); if (!base) return null;
+    var url = base.replace(/^http/, "ws") + "/?room=" + encodeURIComponent(code) + "&role=" + role;
+    try { return new WebSocket(url); } catch (e) { return null; }
+  }
+
   SF.net = {
-    // true so se a biblioteca PeerJS (carregada de um CDN, so com internet) terminou de carregar
-    available: function () { return typeof Peer !== "undefined"; },
+    // true se da pra jogar online: relay configurado, ou a biblioteca PeerJS (CDN, so com internet) carregou
+    available: function () { return !!relayBase() || typeof Peer !== "undefined"; },
     isHost: function () { return isHost; },
     connected: function () { return !!(conn && conn.open); },
     // cria uma sala; onCode(codigo) assim que a sala estiver pronta pra compartilhar, onConnected() quando o outro jogador entrar
     host: function (onCode, onConnected, onError) {
+      if (relayBase()) {
+        isHost = true; var code = randCode(5), ws = relayOpen(code, "host");
+        if (!ws) { onError && onError("relay_invalido"); return; }
+        relayWs = ws; var c = new RelayConn(ws); wireConn(c, onConnected, onError);
+        ws.addEventListener("open", function () { onCode(code); });
+        return;
+      }
       if (typeof Peer === "undefined") { onError && onError("sem_internet"); return; }
       isHost = true;
       var code = randCode(5);
@@ -56,6 +94,12 @@ window.SF = window.SF || {};
     },
     // entra numa sala pelo codigo que o anfitriao compartilhou
     join: function (code, onConnected, onError) {
+      if (relayBase()) {
+        isHost = false; var cd = code.toUpperCase().trim(), ws = relayOpen(cd, "guest");
+        if (!ws) { onError && onError("relay_invalido"); return; }
+        relayWs = ws; wireConn(new RelayConn(ws), onConnected, onError);
+        return;
+      }
       if (typeof Peer === "undefined") { onError && onError("sem_internet"); return; }
       isHost = false;
       try { peer = new Peer({ debug: 0 }); } catch (e) { onError && onError(e); return; }
@@ -72,6 +116,6 @@ window.SF = window.SF || {};
     // RTT medido (ms) - o menor das ultimas amostras (mais representativo da rede real, sem os picos de engasgo);
     // null enquanto nao chegou nenhuma resposta ainda (ex: logo apos conectar).
     rtt: function () { return rttSamples.length ? Math.min.apply(null, rttSamples) : null; },
-    close: function () { clearInterval(pingTimer); try { if (conn) conn.close(); } catch (e) {} try { if (peer) peer.destroy(); } catch (e) {} conn = null; peer = null; isHost = false; rttSamples = []; }
+    close: function () { clearInterval(pingTimer); try { if (conn) conn.close(); } catch (e) {} try { if (peer) peer.destroy(); } catch (e) {} try { if (relayWs) relayWs.close(); } catch (e) {} conn = null; peer = null; relayWs = null; isHost = false; rttSamples = []; }
   };
 })();

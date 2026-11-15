@@ -44,6 +44,8 @@
 </div>
 <!-- PeerJS: so usado pelo COOP ONLINE (requer internet); "defer" pra nao atrasar o jogo offline se a rede estiver lenta/fora do ar -->
 <script defer src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<!-- COOP ONLINE: URL do relay no Render (ex.: "wss://superfighters-relay.onrender.com"). Vazio = usa o P2P (PeerJS). -->
+<script>window.SF_RELAY_URL = "";</script>
 <script src="src/net.js"></script>
 <script src="data/fonts.js"></script>
 <script src="data/weapons.js"></script>

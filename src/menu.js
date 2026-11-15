@@ -382,6 +382,7 @@
     $("ovtitle").textContent = "PAUSADO"; $("ovextra").textContent = ""; $("ovtable").innerHTML = "";
     buttons([["Continuar", function () { SF.setPaused(false); overlay(false); }, true], ["Menu principal", toMenu]]); overlay(true);
   };
+  SF.hideMenu = hideMenu; // usado pelos testes (partida iniciada direto pela API): fecha o menu pra ele nao engolir as teclas
   SF.onEnd = function (r) {
     $("ovtitle").textContent = r.title.toUpperCase(); $("ovextra").textContent = r.extra;
     var html = "<table><tr><th>Jogador</th><th>Abates</th><th>Mortes</th></tr>";
@@ -394,7 +395,9 @@
 
   // ---------- inicio ----------
   var started = false;
-  function boot() { if (started) return; started = true; startDemo(); playTheme(); requestAnimationFrame(loop); } // tema do menu ja no carregamento (se o navegador deixar; senao no 1o toque)
+  // boot: so inicia a demonstracao de fundo se NAO houver partida online em andamento (senao o startDemo, que chega
+  // com atraso, sobrescrevia a sessao de rede e um dos PCs saia do lockstep sem aviso).
+  function boot() { if (started) return; started = true; if (!(SF.net && SF.net.connected && SF.net.connected())) startDemo(); playTheme(); requestAnimationFrame(loop); } // tema do menu ja no carregamento (se o navegador deixar; senao no 1o toque)
   var fontsReady = (document.fonts && document.fonts.ready) || Promise.resolve();
   fontsReady.then(boot); setTimeout(boot, 1500);
 })();
