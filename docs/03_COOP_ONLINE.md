@@ -31,3 +31,9 @@
 - Queda no meio da partida não retoma.
 - Teste visual de movimento em tempo real nas duas abas não foi feito (painel oculto); lógica validada por `step()`.
 - Hospedar em site público (ex.: Vercel) é tecnicamente trivial (estático, HTTPS ok), mas o `LEIAME` diz que os assets são da Mythologic e "não redistribua" — decisão do usuário (avisado).
+
+## Teste de sincronizacao (2026-11-15)
+- Duas abas (host e convidado) no mesmo PC, sinalizacao PeerJS publica, seed 77, entradas de teclado diferentes nos dois lados.
+- Resultado: conexao P2P abriu (RTT ~0.6 ms, local). Estados do P1 e P2 identicos bit a bit nos ticks comparados (ex.: 1532, 1534, ..., 1544).
+- Armadilha achada no teste: se o convidado comeca DEPOIS que o host ja enviou teclas, as teclas antigas sao descartadas e o convidado fica parado no tick 0. No fluxo real do menu isso nao acontece (host manda `start` antes das teclas, canal ordenado).
+- Ainda falta: teste entre dois PCs em redes diferentes (NAT) - o STUN publico cobre a maioria, mas sem TURN pode falhar em redes restritivas.
