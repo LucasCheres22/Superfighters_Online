@@ -50,7 +50,7 @@
   var GMODE_KILLS = { 1: 9999, 2: 3, 3: 5, 4: 10, 5: 2, 6: 3, 7: 5 }; // INFINITE / FIRST TO 3,5,10 / BEST OF 3,5,10 (melhor de N = primeiro a ceil(N/2))
   var S = null, screen = "first", hist = [], msg = "", msgT = 0;
   function newPlate(canTeam, team) { return { ch: 0, team: team || 0, row: 0, diff: 1, canTeam: canTeam }; }
-  function reset() { S = { first: firstRun ? 2 : 0, prompt: firstRun, players: 1, mode: 0, modePos: 0, plates: [], cur: 0, nb: 1, minB: 1, maxB: 7, bots: [], bcur: 0, mapPos: 0, level: 8, gmode: 1, setup: { pos: 0, kp: 0, player: 1 }, wait: null }; firstRun = false; }
+  function reset() { S = { first: firstRun ? 3 : 0, prompt: firstRun, players: 1, mode: 0, modePos: 0, plates: [], cur: 0, nb: 1, minB: 1, maxB: 7, bots: [], bcur: 0, mapPos: 0, level: 8, gmode: 1, setup: { pos: 0, kp: 0, player: 1 }, wait: null }; firstRun = false; }
   reset();
   function snd(k) { try { SF.api.play(k, 0.5); } catch (e) {} }
   function go(s) { hist.push(screen); screen = s; snd("accept"); }
@@ -224,7 +224,6 @@
     c.music = cfg.music; c.sfxVol = cfg.sfxVol; c.keys2 = cfg.keys2; c.mouse = cfg.mouse; // preferencias sao de cada PC
     on.phase = "playing"; coopHide(); overlay(false); hideMenu(); SF.stop(); SF.start(c);
   }
-  $("coopBtn").onclick = openCoopMenu;
 
   // ---------- fundo: partida de demonstracao com bots (isMenuDemo do original) ----------
   function startDemo() {
@@ -304,9 +303,13 @@
       var im = img("assets/menu/2094/1.png");
       if (ready(im)) { // painel preto + opcoes (colunas 0-174) e, so na 1a vez, o balao "New to Superfighters? Start here!" (colunas 188+)
         var o = SF.menuOrg[2094][1]; g.drawImage(im, 0, 0, 175, im.naturalHeight, o[0], o[1], 175, im.naturalHeight);
-        if (f.prompt) g.drawImage(im, 188, 0, im.naturalWidth - 188, im.naturalHeight, o[0] + 188, o[1], im.naturalWidth - 188, im.naturalHeight);
+        if (f.prompt) g.drawImage(im, 188, 0, im.naturalWidth - 188, im.naturalHeight, o[0] + 188, o[1] + 32, im.naturalWidth - 188, im.naturalHeight); // balao aponta pro TUTORIAL, que agora e a 4a linha
       }
-      for (i = 0; i < 4; i++) if (i !== f.first) black(148, 195 + 32 * i - 7, 9, 14);
+      // 5 opcoes: 1 PLAYER, 2 PLAYERS, COOP ONLINE, TUTORIAL, SET UP. TUTORIAL e SET UP (linhas 3 e 4 agora) estao impressos no PNG
+      // nas posicoes antigas: apaga essa faixa e redesenha os 3 textos com a mesma fonte do resto do menu
+      black(0, 245, 175, 95);
+      text("COOP ONLINE", 80, 195 + 64 + 5, WHITE, 16, "center"); text("TUTORIAL", 80, 195 + 96 + 5, WHITE, 16, "center"); text("SET UP", 80, 195 + 128 + 5, WHITE, 16, "center");
+      for (i = 0; i < 5; i++) if (i !== f.first) black(148, 195 + 32 * i - 7, 9, 14);
       marker(152.5, 195 + 32 * f.first, false);
     }
     if (screen === "mode") {
@@ -362,7 +365,6 @@
   var hue = 0;
   function loop() {
     if (menuOn) { gameCanvas.style.filter = "none"; drawFrame(); } else lastT = 0;
-    $("coopBtn").style.display = menuOn && screen === "first" && !$("overlay").classList.contains("on") ? "block" : "none";
     requestAnimationFrame(loop);
   }
 
@@ -370,10 +372,10 @@
   function press(k) {
     var f = S, p, b, st, kk, vs;
     if (screen === "first") {
-      if (k === "up") f.first = (f.first + 3) % 4; else if (k === "down") f.first = (f.first + 1) % 4;
+      if (k === "up") f.first = (f.first + 4) % 5; else if (k === "down") f.first = (f.first + 1) % 5;
       else if (k === "enter") {
         if (f.first === 0 || f.first === 1) { f.players = f.first + 1; f.modePos = 0; go("mode"); }
-        else if (f.first === 2) startTutorial(); else { f.setup.pos = 0; go("setup"); }
+        else if (f.first === 2) openCoopMenu(); else if (f.first === 3) startTutorial(); else { f.setup.pos = 0; go("setup"); }
       }
     } else if (screen === "mode") {
       if (k === "up") f.modePos = (f.modePos + 2) % 3; else if (k === "down") f.modePos = (f.modePos + 1) % 3;
