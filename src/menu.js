@@ -1,4 +1,4 @@
-﻿// Menus recriados a partir do original (MenuMain.as + Code/Data/Menu/*.as): mesmas telas, ordem, teclas e arte (PNGs exportados do SWF).
+// Menus recriados a partir do original (MenuMain.as + Code/Data/Menu/*.as): mesmas telas, ordem, teclas e arte (PNGs exportados do SWF).
 // Palco 800x600. Cada painel e um PNG exportado; as partes dinamicas (retrato, nome, time, dificuldade, mapa, marcadores) sao quadros dos
 // "toggles" originais desenhados nas posicoes da lista de objetos do SWF (tools/swfdump.js). Fundo = partida de demonstracao com bots.
 (function () {
@@ -48,7 +48,7 @@
   var CHAR_N = 8;
   var MAPS = { 2: "storage", 3: "rooftops", 4: "police", 5: "hazardous", 6: "backstreets", 7: "testing", 10: "survival01" };
   var GMODE_KILLS = { 1: 9999, 2: 3, 3: 5, 4: 10, 5: 2, 6: 3, 7: 5 }; // INFINITE / FIRST TO 3,5,10 / BEST OF 3,5,10 (melhor de N = primeiro a ceil(N/2))
-  var S = null, screen = "first", hist = [], msg = "", msgT = 0, onlineGuest = false;
+  var S = null, screen = "first", hist = [], msg = "", msgT = 0;
   function newPlate(canTeam, team) { return { ch: 0, team: team || 0, row: 0, diff: 1, canTeam: canTeam }; }
   function reset() { S = { first: firstRun ? 2 : 0, prompt: firstRun, players: 1, mode: 0, modePos: 0, plates: [], cur: 0, nb: 1, minB: 1, maxB: 7, bots: [], bcur: 0, mapPos: 0, level: 8, gmode: 1, setup: { pos: 0, kp: 0, player: 1 }, wait: null }; firstRun = false; }
   reset();
@@ -68,22 +68,14 @@
   function launch(again) { // StartNewGame
     if (!again) {
       var roster = [];
-      S.plates.forEach(function (p, i) { var r = { bot: false, slot: i + 1, char: p.ch, team: p.canTeam ? p.team : 0 }; if (S.online) r.net = i === 0 ? "host" : "guest"; roster.push(r); });
+      S.plates.forEach(function (p, i) { roster.push({ bot: false, slot: i + 1, char: p.ch, team: p.canTeam ? p.team : 0 }); });
       if (S.mode === 0) S.bots.forEach(function (b) { roster.push({ bot: true, char: b.ch, team: b.team, diff: b.diff }); });
       var anyTeam = roster.some(function (r) { return r.team > 0; });
       var level = S.mode === 2 ? 10 : S.level === 8 ? [2, 3, 4, 5, 6, 7][(Math.random() * 6) | 0] : S.level;
       lastGame = { demo: false, roster: roster, p2: S.players === 2, map: MAPS[level] || "rooftops", mode: S.mode === 2 ? "survival" : (anyTeam ? "tdm" : "dm"), kills: limit(), difficulty: 1, bots: 0 };
     }
     lastGame.music = cfg.music; lastGame.sfxVol = cfg.sfxVol; lastGame.keys2 = cfg.keys2; lastGame.mouse = cfg.mouse;
-    hideMenu(); SF.stop();
-    if (S.online) { // COOP ONLINE: o anfitriao manda a config final (mapa/modo/bots) pro outro PC e os dois comecam a mesma partida com a mesma semente
-      var seed = (Math.random() * 0xffffffff) >>> 0;
-      SF.net.sendStart(lastGame, seed);
-      var local = JSON.parse(JSON.stringify(lastGame));
-      local.net = true; local.seed = seed;
-      local.roster.forEach(function (r) { if (!r.bot) r.net = r.net === "host" ? "local" : "remote"; });
-      SF.start(local);
-    } else SF.start(lastGame);
+    hideMenu(); SF.stop(); SF.start(lastGame);
   }
   function startTutorial() {
     if (!(SF.maps.tutorial && SF.maps.tutorial.art)) { notice("TUTORIAL: MAPA AINDA NAO CONVERTIDO"); return; }
@@ -91,7 +83,17 @@
     launch(true);
   }
 
-  // ---------- COOP ONLINE (nao existe no original; dois PCs em redes diferentes via WebRTC - ver src/net.js) ----------
+  // ---------- ONLINE: versus de ate 8 jogadores (nao existe no original; relay em relay/server.js, transporte em src/net.js) ----------
+  // Fluxo: HOSPEDAR / ENTRAR COM CODIGO -> SALA (vagas 1 a 8; o anfitriao aperta INICIAR com 2+ jogadores) ->
+  // ESCOLHA (cada um escolhe o personagem; o anfitriao escolhe a fase e os pontos pra vencer) -> JOGAR (anfitriao) -> partida.
+  var ON_CHARS = ["ALEATORIO", "JOHNNY", "BORIS", "AGENT", "BILLY", "SCOTT", "FUNNYMAN", "MAC", "JEFF"]; // indice = char (0 = aleatorio), mesma ordem de CHARS no game.js
+  var ON_MAPS = [8, 2, 3, 4, 5, 6, 7];                       // niveis (8 = aleatoria), mesmos do seletor de fase
+  var ON_KILLS = [[3, "3"], [5, "5"], [10, "10"], [9999, "INFINITO"]];
+  var on = null; // sessao online: { code, seat, host, phase: "lobby" | "pick" | "playing" | "ended", level, kills, picks: {vaga: char} }
+  function mapLabel(level) { return level === 8 ? "ALEATORIA" : (MAPS[level] || "?").toUpperCase(); }
+  function killsLabel(k) { for (var i = 0; i < ON_KILLS.length; i++) if (ON_KILLS[i][0] === k) return ON_KILLS[i][1]; return String(k); }
+  function sendLobby() { if (on && on.host) SF.net.send({ type: "lobby", phase: on.phase === "pick" ? "pick" : "lobby", level: on.level, kills: on.kills }); }
+  function sendPick() { if (on) SF.net.send({ type: "pick", char: on.picks[on.seat] || 0 }); }
   function coopShow(title, lines, controls) {
     $("ovtable").innerHTML = ""; $("ovbtns").innerHTML = ""; $("ovtitle").textContent = title; $("ovextra").textContent = "";
     var box = $("coopui"); box.innerHTML = ""; box.style.display = "block";
@@ -100,22 +102,28 @@
     overlay(true);
   }
   function coopHide() { $("coopui").style.display = "none"; }
-  function coopReset() { S.online = null; try { SF.net.close(); } catch (e) {} }
   function mkBtn(label, fn, primary) { var b = document.createElement("button"); b.textContent = label; if (primary) b.className = "primary"; b.onclick = fn; return b; }
-  function coopFail(msg) { coopReset(); coopShow("COOP ONLINE", [msg], [mkBtn("VOLTAR", openCoopMenu, true)]); }
+  function addLine(box, text) { var d = document.createElement("div"); d.textContent = text; box.appendChild(d); }
+  function optionRow(items, selected, onPick) { // botoes em linha; o escolhido fica destacado
+    var row = document.createElement("div"); row.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 6px";
+    items.forEach(function (it) { var b = mkBtn(it.label, function () { onPick(it.value); }, it.value === selected); b.style.padding = "3px 6px"; b.style.fontSize = "11px"; row.appendChild(b); });
+    return row;
+  }
+  function leaveOnline() { try { SF.net.close(); } catch (e) {} on = null; coopHide(); showMenu(); }
+  function coopFail(msg) { try { SF.net.close(); } catch (e) {} on = null; coopShow("COOP ONLINE", [msg], [mkBtn("VOLTAR", openCoopMenu, true)]); }
   function openCoopMenu() {
-    coopShow("COOP ONLINE", ["Jogue com alguem em outro PC, em outra rede, pela internet.", "Os dois precisam ter esta mesma pasta/versao do jogo aberta."],
+    coopShow("COOP ONLINE", ["Versus online de ate 8 jogadores, em outros PCs e redes, pela internet.", "Cada um abre o jogo e entra pelo codigo da sala."],
       [mkBtn("HOSPEDAR PARTIDA", coopHost, true), mkBtn("ENTRAR COM CODIGO", coopJoinPrompt), mkBtn("CANCELAR", function () { coopHide(); overlay(false); })]);
   }
+  function relayFail(e) {
+    var m = { sala_cheia: "A sala esta cheia (8 jogadores).", sala_nao_encontrada: "Nao encontrou a sala. Confira o codigo e se o anfitriao ja criou a sala.", codigo_em_uso: "Esse codigo ja esta em uso. Tente de novo." };
+    return m[e] || ("Nao foi possivel conectar ao servidor (" + (e && e.type ? e.type : e) + "). Verifique a conexao e tente de novo.");
+  }
   function coopHost() {
-    if (!SF.net || !SF.net.available()) { coopFail("Sem internet, ou a biblioteca de rede nao carregou. Verifique a conexao e tente de novo."); return; }
+    if (!SF.net.available()) { coopFail("Sem conexao com o servidor de partidas (endereco do relay nao configurado)."); return; }
     coopShow("COOP ONLINE", ["Criando sala..."], []);
-    SF.net.host(function (code) {
-      coopShow("COOP ONLINE - HOSPEDANDO", ["Codigo da sala: " + code, "Passe esse codigo pro outro jogador (ele usa ENTRAR COM CODIGO no menu dele).", "Aguardando o outro jogador entrar..."],
-        [mkBtn("CANCELAR", function () { coopReset(); openCoopMenu(); })]);
-    }, function () {
-      coopHide(); overlay(false); S.online = { isHost: true }; S.players = 2; S.modePos = 0; go("mode");
-    }, function (e) { coopFail("Nao foi possivel criar a sala (" + (e && e.type ? e.type : e) + "). Tente de novo."); });
+    SF.net.host(function (code) { on = { code: code, seat: 0, host: true, phase: "lobby", level: 8, kills: 5, picks: {} }; renderOnline(); },
+      function (e) { coopFail(relayFail(e)); });
   }
   function coopJoinPrompt() {
     var input = document.createElement("input"); input.maxLength = 12; input.placeholder = "CODIGO";
@@ -129,18 +137,92 @@
     setTimeout(function () { input.focus(); }, 0);
   }
   function coopJoin(code) {
-    if (!SF.net || !SF.net.available()) { coopFail("Sem internet, ou a biblioteca de rede nao carregou. Verifique a conexao e tente de novo."); return; }
+    if (!SF.net.available()) { coopFail("Sem conexao com o servidor de partidas (endereco do relay nao configurado)."); return; }
     coopShow("COOP ONLINE", ["Conectando..."], []);
-    SF.net.join(code, function () {
-      coopShow("COOP ONLINE", ["Conectado! Aguardando o anfitriao escolher mapa e modo..."], [mkBtn("CANCELAR", function () { coopReset(); openCoopMenu(); })]);
-      SF.net.onStart = function (remoteCfg, seed) {
-        var cfg2 = JSON.parse(JSON.stringify(remoteCfg));
-        cfg2.net = true; cfg2.seed = seed;
-        cfg2.roster.forEach(function (r) { if (!r.bot) r.net = r.net === "host" ? "remote" : "local"; });
-        cfg2.music = cfg.music; cfg2.sfxVol = cfg.sfxVol; cfg2.keys2 = cfg.keys2; cfg2.mouse = cfg.mouse; // preferencias sao de cada PC
-        onlineGuest = true; coopHide(); overlay(false); hideMenu(); SF.stop(); SF.start(cfg2);
-      };
-    }, function (e) { coopFail("Nao encontrou a sala (" + (e && e.type ? e.type : e) + "). Confira o codigo e se o anfitriao ja criou a sala."); });
+    SF.net.join(code, function (seat) {
+      on = { code: code.toUpperCase().trim(), seat: seat, host: false, phase: "lobby", level: 8, kills: 5, picks: {} };
+      sendPick(); renderOnline();
+    }, function (e) { coopFail(relayFail(e)); });
+  }
+  // a sala mudou (alguem entrou/saiu): o anfitriao manda a etapa atual pro recem-chegado e todos mandam o proprio personagem
+  SF.net.onPeer(function (ev, seat) {
+    if (!on) return;
+    if (ev === "leave") delete on.picks[seat];
+    if (ev === "join") { if (on.host) sendLobby(); sendPick(); }
+    if (on.phase === "lobby" || on.phase === "pick") renderOnline();
+  });
+  SF.net.onMsg(function (msg, from) {
+    if (!on) return;
+    if (msg.type === "lobby" && !on.host) { // etapa/fase escolhida pelo anfitriao
+      if (on.phase === "playing" || on.phase === "ended") SF.stop(); // o anfitriao voltou pra sala
+      on.phase = msg.phase === "pick" ? "pick" : "lobby"; on.level = msg.level; on.kills = msg.kills;
+      renderOnline();
+    } else if (msg.type === "pick") {
+      on.picks[from] = msg.char || 0;
+      if (on.phase === "lobby" || on.phase === "pick") renderOnline();
+    }
+  });
+  SF.net.onStart = function (shared, seed) { if (on && !on.host) beginOnlineMatch(shared, seed); }; // convidado: o anfitriao apertou JOGAR
+  SF.net.onClose(function (motivo) { // a sala acabou (anfitriao saiu ou a rede caiu). Na partida quem avisa e o SF.onNetDrop
+    if (!on || on.phase === "playing") return;
+    on = null; coopShow("SALA ENCERRADA", [motivo === "host_left" ? "O anfitriao saiu da sala." : "A conexao com a sala caiu."], [mkBtn("MENU PRINCIPAL", toMenu, true)]);
+  });
+  function renderOnline() {
+    if (!on) return;
+    var occ = SF.net.seats(), box = $("coopui");
+    $("ovtitle").textContent = on.phase === "pick" ? "ESCOLHA DA PARTIDA" : "SALA ONLINE";
+    $("ovextra").textContent = "Codigo: " + on.code + "   |   VERSUS - ate 8 jogadores";
+    var rows = ['<table class="compact"><tr><th>Vaga</th><th>Jogador</th><th>Personagem</th></tr>'];
+    for (var s = 0; s < 8; s++) {
+      var here = occ.indexOf(s) >= 0, you = s === on.seat;
+      var who = here ? "P" + (s + 1) + (you ? " (voce)" : "") + (s === 0 ? " - anfitriao" : "") : "- vazio -";
+      rows.push('<tr class="' + (you ? "you" : "") + '"><td>' + (s + 1) + "</td><td>" + who + "</td><td>" + (here ? ON_CHARS[on.picks[s] || 0] : "-") + "</td></tr>");
+    }
+    $("ovtable").innerHTML = rows.join("") + "</table>";
+    box.innerHTML = ""; box.style.display = "block";
+    var btns = [];
+    if (on.phase === "lobby") {
+      addLine(box, occ.length < 2 ? "Aguardando jogadores entrarem com o codigo " + on.code + "..." : (on.host ? "Todos na sala. Quando quiserem, aperte INICIAR." : "Aguardando o anfitriao iniciar a partida..."));
+      if (on.host) btns.push(["INICIAR", startPick, true, occ.length < 2]);
+    } else if (on.phase === "pick") {
+      addLine(box, "Seu personagem:");
+      box.appendChild(optionRow(ON_CHARS.map(function (l, i) { return { label: l, value: i }; }), on.picks[on.seat] || 0, function (v) { on.picks[on.seat] = v; sendPick(); renderOnline(); }));
+      if (on.host) {
+        addLine(box, "Fase:");
+        box.appendChild(optionRow(ON_MAPS.map(function (l) { return { label: mapLabel(l), value: l }; }), on.level, function (v) { on.level = v; sendLobby(); renderOnline(); }));
+        addLine(box, "Pontos para vencer:");
+        box.appendChild(optionRow(ON_KILLS.map(function (k) { return { label: k[1], value: k[0] }; }), on.kills, function (v) { on.kills = v; sendLobby(); renderOnline(); }));
+        btns.push(["JOGAR", startOnlineMatch, true, occ.length < 2]);
+        btns.push(["VOLTAR", backToLobby]);
+      } else {
+        addLine(box, "Fase: " + mapLabel(on.level) + "   |   Pontos para vencer: " + killsLabel(on.kills));
+        addLine(box, "Aguardando o anfitriao escolher a partida...");
+      }
+    } else if (on.phase === "ended") {
+      addLine(box, on.host ? "Partida encerrada." : "Partida encerrada. Aguardando o anfitriao voltar para a sala...");
+      if (on.host) btns.push(["VOLTAR A SALA", backToLobby, true]);
+    }
+    btns.push(["SAIR DA SALA", leaveOnline]);
+    buttons(btns);
+    overlay(true);
+  }
+  function startPick() { if (!on || !on.host) return; on.phase = "pick"; sendLobby(); renderOnline(); }
+  function backToLobby() { if (!on || !on.host) return; SF.stop(); on.phase = "lobby"; sendLobby(); renderOnline(); }
+  function startOnlineMatch() { // anfitriao: monta o roster com as escolhas de todos e manda a partida pra sala
+    if (!on || !on.host || SF.net.seats().length < 2) return;
+    var seed = (Math.random() * 0xffffffff) >>> 0;
+    var level = on.level === 8 ? [2, 3, 4, 5, 6, 7][(Math.random() * 6) | 0] : on.level;
+    var roster = SF.net.seats().map(function (s) { return { bot: false, seat: s, slot: s + 1, name: "P" + (s + 1), char: on.picks[s] || 0, team: 0 }; });
+    var shared = { demo: false, roster: roster, p2: false, map: MAPS[level] || "rooftops", mode: "dm", kills: on.kills, difficulty: 1, bots: 0 };
+    SF.net.sendStart(shared, seed);
+    beginOnlineMatch(shared, seed);
+  }
+  function beginOnlineMatch(shared, seed) { // cada PC: a mesma partida, com o proprio jogador marcado como "local" (teclado daqui)
+    var c = JSON.parse(JSON.stringify(shared));
+    c.net = true; c.seed = seed;
+    c.roster.forEach(function (r) { if (!r.bot) r.net = r.seat === on.seat ? "local" : "remote"; });
+    c.music = cfg.music; c.sfxVol = cfg.sfxVol; c.keys2 = cfg.keys2; c.mouse = cfg.mouse; // preferencias sao de cada PC
+    on.phase = "playing"; coopHide(); overlay(false); hideMenu(); SF.stop(); SF.start(c);
   }
   $("coopBtn").onclick = openCoopMenu;
 
@@ -162,7 +244,7 @@
   function stopTheme() { if (menuTheme) menuTheme.pause(); }
   addEventListener("keydown", function () { if (menuOn && menuTheme && menuTheme.paused && cfg.music) playTheme(); });
   addEventListener("mousedown", function () { if (menuOn && menuTheme && menuTheme.paused && cfg.music) playTheme(); });
-  function showMenu() { menuOn = true; mc.style.display = "block"; lastT = 0; $("overlay").classList.remove("on"); onlineGuest = false; reset(); screen = "first"; hist = []; startDemo(); playTheme(); }
+  function showMenu() { menuOn = true; mc.style.display = "block"; lastT = 0; $("overlay").classList.remove("on"); reset(); screen = "first"; hist = []; startDemo(); playTheme(); }
   function hideMenu() { menuOn = false; mc.style.display = "none"; gameCanvas.style.filter = "none"; stopTheme(); }
 
   // ---------- desenho de cada tela ----------
@@ -280,7 +362,7 @@
   var hue = 0;
   function loop() {
     if (menuOn) { gameCanvas.style.filter = "none"; drawFrame(); } else lastT = 0;
-    $("coopBtn").style.display = menuOn && screen === "first" ? "block" : "none";
+    $("coopBtn").style.display = menuOn && screen === "first" && !$("overlay").classList.contains("on") ? "block" : "none";
     requestAnimationFrame(loop);
   }
 
@@ -290,7 +372,7 @@
     if (screen === "first") {
       if (k === "up") f.first = (f.first + 3) % 4; else if (k === "down") f.first = (f.first + 1) % 4;
       else if (k === "enter") {
-        if (f.first === 0 || f.first === 1) { S.online = null; f.players = f.first + 1; f.modePos = 0; go("mode"); }
+        if (f.first === 0 || f.first === 1) { f.players = f.first + 1; f.modePos = 0; go("mode"); }
         else if (f.first === 2) startTutorial(); else { f.setup.pos = 0; go("setup"); }
       }
     } else if (screen === "mode") {
@@ -350,7 +432,7 @@
   }
   var KMAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "enter", Space: "enter", Escape: "back", Backspace: "back", NumpadEnter: "enter" };
   addEventListener("keydown", function (e) {
-    if (!menuOn) return;
+    if (!menuOn || $("overlay").classList.contains("on")) return; // overlay aberto (sala online, pausa, fim de partida): os botoes do overlay recebem as teclas
     if (document.activeElement && document.activeElement.tagName === "INPUT") return; // digitando no campo de codigo (COOP ONLINE) - nao navega o menu por baixo
     if (S.wait != null) { // capturando uma tecla nova
       e.preventDefault(); e.stopPropagation();
@@ -370,9 +452,9 @@
   function overlay(on) { $("overlay").classList.toggle("on", on); }
   function buttons(list) {
     var box = $("ovbtns"); box.innerHTML = "";
-    list.forEach(function (b) { var el = document.createElement("button"); el.textContent = b[0]; if (b[2]) el.className = "primary"; el.onclick = b[1]; box.appendChild(el); });
+    list.forEach(function (b) { var el = document.createElement("button"); el.textContent = b[0]; if (b[2]) el.className = "primary"; el.onclick = b[1]; el.disabled = !!b[3]; box.appendChild(el); });
   }
-  function toMenu() { SF.stop(); try { SF.net.close(); } catch (e) {} showMenu(); }
+  function toMenu() { SF.stop(); try { SF.net.close(); } catch (e) {} on = null; showMenu(); }
   SF.onNetDrop = function () { // COOP ONLINE: o outro PC caiu/saiu no meio da partida (nao da pra continuar sem ele)
     $("ovtitle").textContent = "CONEXAO PERDIDA"; $("ovextra").textContent = "O outro jogador saiu ou a rede caiu.";
     $("ovtable").innerHTML = ""; coopHide(); buttons([["Menu principal", toMenu, true]]); overlay(true);
@@ -388,11 +470,16 @@
     var html = "<table><tr><th>Jogador</th><th>Abates</th><th>Mortes</th></tr>";
     r.rows.forEach(function (p) { html += '<tr class="' + (p.you ? "you" : "") + '"><td>' + p.name + (p.team ? " (time " + p.team + ")" : "") + "</td><td>" + p.kills + "</td><td>" + p.deaths + "</td></tr>"; });
     $("ovtable").innerHTML = html + "</table>";
-    // COOP ONLINE: so quem hospedou reinicia a partida (o convidado so espera); o convidado nao tem lastGame/autoridade pra isso
-    var btns = onlineGuest ? [["Menu principal", toMenu, true]] : [["Jogar de novo", function () { overlay(false); launch(true); }, true], ["Menu principal", toMenu]];
-    buttons(btns); overlay(true);
+    if (on) { // ONLINE: a sala continua aberta; o anfitriao decide voltar pra sala (os convidados seguem)
+      on.phase = "ended";
+      var box = $("coopui"); box.innerHTML = ""; box.style.display = "block";
+      addLine(box, on.host ? "Partida encerrada. Voltar pra sala para escolher outra partida?" : "Partida encerrada. Aguardando o anfitriao voltar pra sala...");
+      buttons(on.host ? [["VOLTAR A SALA", backToLobby, true], ["SAIR DA SALA", leaveOnline]] : [["SAIR DA SALA", leaveOnline]]);
+      overlay(true); return;
+    }
+    coopHide();
+    buttons([["Jogar de novo", function () { overlay(false); launch(true); }, true], ["Menu principal", toMenu]]); overlay(true);
   };
-
   // ---------- inicio ----------
   var started = false;
   // boot: so inicia a demonstracao de fundo se NAO houver partida online em andamento (senao o startDemo, que chega

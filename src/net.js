@@ -1,121 +1,114 @@
-// Coop online (NAO existe no original - Superfighters so tem multiplayer local; ADICIONADO a pedido do usuario).
-// Transporte: WebRTC P2P (DataChannel) via PeerJS; o servidor publico da PeerJS so serve de "sinalizacao" (troca o
-// endereco inicial dos dois PCs) - depois disso o trafego do jogo vai direto de um PC pro outro, sem passar por nenhum
-// servidor nosso. Requer internet; funciona na maioria das redes (STUN publico do Google fura NAT comum), mas pode
-// falhar atras de firewalls/NAT muito restritivos (nao ha servidor TURN configurado para esses casos).
+// Partida ONLINE (NAO existe no original - Superfighters so tem multiplayer local; ADICIONADO a pedido do usuario).
+// Transporte: WebSocket num relay nosso (relay/server.js), com salas de ate 8 jogadores. window.SF_RELAY_URL define o endereco
+// (ex.: "wss://superfighters-relay.onrender.com"). O relay so repassa mensagens; a simulacao roda em cada PC (lockstep).
+// Cada jogador tem uma "vaga" (seat 0..7): 0 = anfitriao. Toda mensagem recebida traz "from" (vaga de quem mandou).
 window.SF = window.SF || {};
 (function () {
   "use strict";
-  var peer = null, conn = null, isHost = false;
-  // listas (nao so 1 callback): quem usa isso e o menu.js (fluxo de sala/handshake) E o game.js (input tick a tick
-  // durante a partida) ao mesmo tempo - os dois precisam ser avisados de "chegou input"/"caiu a conexao".
-  var inputCbs = [], closeCbs = [];
-  var PREFIX = "sfhtml5-";
-  // Ping/pong pra medir o atraso real da conexao (RTT): o jogo usa isso pra ajustar o atraso de input do lockstep
-  // (game.js) ao minimo necessario em vez de um valor fixo "seguro" (numa conexao rapida/local, o atraso fica bem
-  // menor - so cresce de verdade quando a rede realmente exige).
-  var rttSamples = [], pingTimer = null;
+  var ws = null, mySeat = -1, hostFlag = false, joined = false, seats = [];
+  var msgCbs = [], inputCbs = [], peerCbs = [], closeCbs = [];
+  var rttSamples = {}, pingTimer = null;
+  var pendingJoin = null, pendingErr = null; // callbacks da tentativa de entrar (host/join) ate a sala confirmar
 
-  function randCode(n) { var s = "", abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (var i = 0; i < n; i++) s += abc[(Math.random() * abc.length) | 0]; return s; }
-  function sendPing() { SF.net.send({ type: "ping", t: performance.now() }); }
-
-  function wireConn(c, onConnected, onError) {
-    conn = c;
-    conn.on("open", function () {
-      onConnected && onConnected();
-      rttSamples = []; clearInterval(pingTimer);
-      sendPing(); sendPing(); sendPing(); // algumas amostras logo de cara (ainda no menu, antes da partida comecar)
-      pingTimer = setInterval(sendPing, 2000); // continua medindo durante a partida (adapta se a rede piorar/melhorar)
-    });
-    conn.on("data", function (msg) {
-      if (!msg) return;
-      if (msg.type === "input") inputCbs.forEach(function (cb) { cb(msg.t, msg.k); });
-      else if (msg.type === "start" && SF.net.onStart) SF.net.onStart(msg.cfg, msg.seed);
-      else if (msg.type === "msg" && SF.net.onMsg) SF.net.onMsg(msg.text);
-      else if (msg.type === "ping") SF.net.send({ type: "pong", t: msg.t });
-      else if (msg.type === "pong") { rttSamples.push(performance.now() - msg.t); if (rttSamples.length > 6) rttSamples.shift(); }
-    });
-    conn.on("close", function () { conn = null; clearInterval(pingTimer); closeCbs.forEach(function (cb) { cb(); }); });
-    conn.on("error", function (e) { if (onError) onError(e); });
-  }
-
-  // ---------- transporte por RELAY (WebSocket num servidor nosso: relay/server.js) ----------
-  // Usado quando window.SF_RELAY_URL esta definido (ex.: "wss://superfighters-relay.onrender.com"). Nao depende da PeerJS
-  // nem de NAT: os dois lados so abrem uma conexao de saida pro relay. Mesma interface de conexao usada pelo wireConn.
-  var relayWs = null;
   function relayBase() { var u = window.SF_RELAY_URL; return u ? String(u).replace(/\/+$/, "") : null; }
-  function RelayConn(ws) {
-    var self = this, handlers = { open: [], data: [], close: [], error: [] };
-    this.open = false;
-    this.on = function (ev, cb) { if (handlers[ev]) handlers[ev].push(cb); };
-    this.emit = function (ev, arg) { (handlers[ev] || []).forEach(function (cb) { try { cb(arg); } catch (e) {} }); };
-    this.send = function (obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
-    this.close = function () { try { ws.close(); } catch (e) {} };
-    ws.onmessage = function (ev) {
-      var msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (msg && msg.type === "sys") {
-        if (msg.ev === "paired" && !self.open) { self.open = true; self.emit("open"); }
-        else if (msg.ev === "peer_left") { if (self.open) { self.open = false; self.emit("close"); } }
-        else if (msg.ev === "erro") { self.emit("error", msg.motivo || "erro_relay"); }
-        return;
-      }
-      self.emit("data", msg);
-    };
-    ws.onerror = function () { self.emit("error", "relay_falhou"); };
-    ws.onclose = function () { if (self.open) { self.open = false; } self.emit("close"); };
+  function randCode(n) { var s = "", abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (var i = 0; i < n; i++) s += abc[(Math.random() * abc.length) | 0]; return s; }
+  function rawSend(obj) { if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(obj)); } catch (e) {} }
+  function sendPing() { rawSend({ type: "ping", t: performance.now() }); }
+  function addSeat(s) { if (seats.indexOf(s) < 0) seats.push(s); seats.sort(function (a, b) { return a - b; }); }
+  function removeSeat(s) { seats = seats.filter(function (x) { return x !== s; }); delete rttSamples[s]; }
+  function fire(list, arg1, arg2) { list.slice().forEach(function (cb) { try { cb(arg1, arg2); } catch (e) { if (window.console) console.error(e); } }); }
+
+  function onSys(msg) {
+    if (msg.ev === "esperando") { // anfitriao: sala criada, vaga 0
+      mySeat = 0; hostFlag = true; joined = true; seats = [0]; startPing();
+      var ok = pendingJoin; pendingJoin = pendingErr = null; if (ok) ok(0);
+    } else if (msg.ev === "welcome") { // convidado: entrou numa vaga
+      mySeat = msg.seat; hostFlag = false; joined = true; seats = (msg.seats || []).slice().sort(function (a, b) { return a - b; });
+      if (seats.indexOf(mySeat) < 0) addSeat(mySeat);
+      startPing();
+      var ok2 = pendingJoin; pendingJoin = pendingErr = null; if (ok2) ok2(mySeat);
+    } else if (msg.ev === "peer_join") { addSeat(msg.seat); fire(peerCbs, "join", msg.seat); }
+    else if (msg.ev === "peer_left") { removeSeat(msg.seat); fire(peerCbs, "leave", msg.seat); }
+    else if (msg.ev === "room_closed") { endRoom("host_left"); }
+    else if (msg.ev === "erro") {
+      var err = pendingErr; pendingJoin = pendingErr = null;
+      if (err) err(msg.motivo || "erro_relay"); else endRoom(msg.motivo || "erro_relay");
+    }
   }
-  function relayOpen(code, role) {
-    var base = relayBase(); if (!base) return null;
+  function endRoom(reason) {
+    if (!joined && !ws) return;
+    var wasJoined = joined; joined = false; stopPing();
+    try { if (ws) ws.close(); } catch (e) {}
+    ws = null; mySeat = -1; hostFlag = false; seats = []; rttSamples = {};
+    if (wasJoined) fire(closeCbs, reason);
+  }
+  function startPing() { stopPing(); sendPing(); pingTimer = setInterval(sendPing, 2000); }
+  function stopPing() { clearInterval(pingTimer); pingTimer = null; }
+
+  function onMessage(ev) {
+    var msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (!msg || typeof msg !== "object") return;
+    if (msg.type === "sys") { onSys(msg); return; }
+    var from = msg.from;
+    if (msg.type === "ping") { rawSend({ type: "pong", t: msg.t, to: from }); return; }
+    if (msg.type === "pong") { var arr = rttSamples[from] || (rttSamples[from] = []); arr.push(performance.now() - msg.t); if (arr.length > 6) arr.shift(); return; }
+    if (msg.type === "input") { fire(inputCbs, from, msg); return; }
+    if (msg.type === "start" && SF.net.onStart) { SF.net.onStart(msg.cfg, msg.seed, from); return; }
+    fire(msgCbs, msg, from);
+  }
+
+  function openSocket(code, role, onJoin, onError) {
+    var base = relayBase();
+    if (!base) { onError && onError("sem_relay"); return false; }
     var url = base.replace(/^http/, "ws") + "/?room=" + encodeURIComponent(code) + "&role=" + role;
-    try { return new WebSocket(url); } catch (e) { return null; }
+    try { ws = new WebSocket(url); } catch (e) { onError && onError("relay_invalido"); return false; }
+    pendingJoin = onJoin || null; pendingErr = onError || null;
+    ws.onmessage = onMessage;
+    ws.onerror = function () { if (pendingErr) { var e = pendingErr; pendingJoin = pendingErr = null; e("relay_falhou"); } };
+    ws.onclose = function () { if (pendingErr) { var e = pendingErr; pendingJoin = pendingErr = null; e("conexao_fechada"); } else endRoom("conexao_caiu"); };
+    return true;
+  }
+
+  // RTT (ms) por par: o pior dos melhores (o atraso do lockstep precisa cobrir o jogador mais lento). null sem amostras ainda.
+  function rtt() {
+    var worst = null;
+    Object.keys(rttSamples).forEach(function (s) {
+      var arr = rttSamples[s]; if (!arr || !arr.length) return;
+      var best = Math.min.apply(null, arr); if (worst === null || best > worst) worst = best;
+    });
+    return worst;
   }
 
   SF.net = {
-    // true se da pra jogar online: relay configurado, ou a biblioteca PeerJS (CDN, so com internet) carregou
-    available: function () { return !!relayBase() || typeof Peer !== "undefined"; },
-    isHost: function () { return isHost; },
-    connected: function () { return !!(conn && conn.open); },
-    // cria uma sala; onCode(codigo) assim que a sala estiver pronta pra compartilhar, onConnected() quando o outro jogador entrar
-    host: function (onCode, onConnected, onError) {
-      if (relayBase()) {
-        isHost = true; var code = randCode(5), ws = relayOpen(code, "host");
-        if (!ws) { onError && onError("relay_invalido"); return; }
-        relayWs = ws; var c = new RelayConn(ws); wireConn(c, onConnected, onError);
-        ws.addEventListener("open", function () { onCode(code); });
-        return;
-      }
-      if (typeof Peer === "undefined") { onError && onError("sem_internet"); return; }
-      isHost = true;
+    available: function () { return !!relayBase(); },
+    isHost: function () { return hostFlag; },
+    connected: function () { return joined && !!ws && ws.readyState === 1; },
+    mySeat: function () { return mySeat; },
+    seats: function () { return seats.slice(); },
+    // cria a sala; onCode(codigo) quando estiver pronta, onError(motivo) se falhar
+    host: function (onCode, onError) {
       var code = randCode(5);
-      try { peer = new Peer(PREFIX + code, { debug: 0 }); } catch (e) { onError && onError(e); return; }
-      peer.on("open", function () { onCode(code); });
-      peer.on("connection", function (c) { wireConn(c, onConnected, onError); });
-      peer.on("error", function (e) { onError && onError(e); });
+      if (!openSocket(code, "host", function () { onCode(code); }, onError)) return;
     },
-    // entra numa sala pelo codigo que o anfitriao compartilhou
-    join: function (code, onConnected, onError) {
-      if (relayBase()) {
-        isHost = false; var cd = code.toUpperCase().trim(), ws = relayOpen(cd, "guest");
-        if (!ws) { onError && onError("relay_invalido"); return; }
-        relayWs = ws; wireConn(new RelayConn(ws), onConnected, onError);
-        return;
-      }
-      if (typeof Peer === "undefined") { onError && onError("sem_internet"); return; }
-      isHost = false;
-      try { peer = new Peer({ debug: 0 }); } catch (e) { onError && onError(e); return; }
-      peer.on("open", function () { wireConn(peer.connect(PREFIX + code.toUpperCase().trim(), { reliable: true }), onConnected, onError); });
-      peer.on("error", function (e) { onError && onError(e); });
+    // entra na sala pelo codigo; onJoined(vaga) quando o relay aceitar, onError(motivo) se falhar
+    join: function (code, onJoined, onError) {
+      openSocket(code.toUpperCase().trim(), "guest", onJoined, onError);
     },
-    send: function (obj) { if (conn && conn.open) try { conn.send(obj); } catch (e) {} },
-    sendInput: function (t, k) { this.send({ type: "input", t: t, k: k }); },
-    sendStart: function (cfg, seed) { this.send({ type: "start", cfg: cfg, seed: seed }); },
-    onInput: function (cb) { inputCbs.push(cb); },
-    onClose: function (cb) { closeCbs.push(cb); },
-    onStart: null, // setado por quem usa (menu.js): function(cfg, seed)
-    onMsg: null,
-    // RTT medido (ms) - o menor das ultimas amostras (mais representativo da rede real, sem os picos de engasgo);
-    // null enquanto nao chegou nenhuma resposta ainda (ex: logo apos conectar).
-    rtt: function () { return rttSamples.length ? Math.min.apply(null, rttSamples) : null; },
-    close: function () { clearInterval(pingTimer); try { if (conn) conn.close(); } catch (e) {} try { if (peer) peer.destroy(); } catch (e) {} try { if (relayWs) relayWs.close(); } catch (e) {} conn = null; peer = null; relayWs = null; isHost = false; rttSamples = []; }
+    // mensagem de aplicacao pra todos da sala (cada um recebe com from = vaga de quem mandou)
+    send: function (obj) { rawSend(obj); },
+    sendTo: function (seat, obj) { var o = Object.assign({}, obj, { to: seat }); rawSend(o); },
+    sendInput: function (t, k) { rawSend({ type: "input", t: t, k: k }); },
+    sendStart: function (cfg, seed) { rawSend({ type: "start", cfg: cfg, seed: seed }); },
+    onMsg: function (cb) { msgCbs.push(cb); },     // cb(msg, from)
+    onInput: function (cb) { inputCbs.push(cb); }, // cb(from, msg) - msg = {t, k}
+    onPeer: function (cb) { peerCbs.push(cb); },   // cb("join"|"leave", vaga)
+    onClose: function (cb) { closeCbs.push(cb); }, // cb(motivo) - a sala acabou/caiu (inclui anfitriao saiu)
+    onStart: null, // setado por quem usa (menu.js): function(cfg, seed, from)
+    rtt: rtt,
+    close: function () {
+      stopPing(); pendingJoin = pendingErr = null;
+      try { if (ws) ws.close(); } catch (e) {}
+      ws = null; joined = false; mySeat = -1; hostFlag = false; seats = []; rttSamples = {};
+    }
   };
 })();

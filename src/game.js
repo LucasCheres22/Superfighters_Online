@@ -1,4 +1,4 @@
-﻿// Superfighters HTML5 - motor do prototipo. Sem dependencias, roda em file://.
+// Superfighters HTML5 - motor do prototipo. Sem dependencias, roda em file://.
 (function () {
   "use strict";
   var canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -122,6 +122,18 @@
   var rngState = 1;
   function rand() { rngState = (rngState + 0x6D2B79F5) >>> 0; var t = rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
   function seedRng(s) { rngState = s >>> 0; }
+  // Trigonometria DETERMINISTICA (COOP ONLINE): so usa + - * / e Math.sqrt, que o IEEE 754 garante iguais em qualquer
+  // navegador/CPU. Math.sin/cos/atan2/hypot podem devolver o ultimo bit diferente entre motores (Chrome x Firefox x
+  // Safari, ou versoes diferentes), e a simulacao dos dois PCs divergiria com o tempo. Por isso a simulacao usa estas.
+  var DPI = 3.141592653589793, DHALF_PI = 1.5707963267948966;
+  function dpoly(x2, c) { var r = 0; for (var i = c.length - 1; i >= 0; i--) r = r * x2 + c[i]; return r; }
+  function dsinCore(x) { return x * dpoly(x * x, [1, -1 / 6, 1 / 120, -1 / 5040, 1 / 362880, -1 / 39916800, 1 / 6227020800]); }
+  function dcosCore(x) { return dpoly(x * x, [1, -1 / 2, 1 / 24, -1 / 720, 1 / 40320, -1 / 3628800, 1 / 479001600, -1 / 87178291200]); }
+  function dsin(x) { var k = Math.floor(x / DHALF_PI + 0.5), r = x - k * DHALF_PI, q = ((k % 4) + 4) % 4; return q === 0 ? dsinCore(r) : q === 1 ? dcosCore(r) : q === 2 ? -dsinCore(r) : -dcosCore(r); }
+  function dcos(x) { var k = Math.floor(x / DHALF_PI + 0.5), r = x - k * DHALF_PI, q = ((k % 4) + 4) % 4; return q === 0 ? dcosCore(r) : q === 1 ? -dsinCore(r) : q === 2 ? -dcosCore(r) : dsinCore(r); }
+  function datanCore(t) { var n = 0; while (Math.abs(t) > 0.1) { t = t / (1 + Math.sqrt(1 + t * t)); n++; } var s = t * dpoly(t * t, [1, -1 / 3, 1 / 5, -1 / 7, 1 / 9, -1 / 11, 1 / 13, -1 / 15]); for (var i = 0; i < n; i++) s *= 2; return s; }
+  function datan2(y, x) { if (x === 0 && y === 0) return 0; var ax = Math.abs(x), ay = Math.abs(y), a = ax >= ay ? datanCore(ay / ax) : DHALF_PI - datanCore(ax / ay); if (x < 0) a = DPI - a; return y < 0 ? -a : a; }
+  function dhypot(a, b) { return Math.sqrt(a * a + b * b); }
 
   function makePlayer(i, human) {
     var s = spawnList[i % spawnList.length], dup = Math.floor(i / spawnList.length);
@@ -154,7 +166,7 @@
         var pl = makePlayer(i, !r.bot), ch = r.char ? CHARS[r.char - 1] : (rnd.length ? rnd.pop() : CHARS[(rand() * CHARS.length) | 0]);
         pl.char = ch; pl.team = r.team || 0;
         if (r.bot) { pl.name = BOT_NAMES[ch] || ch; pl.skill = r.diff == null ? 1 : r.diff; }
-        else { pl.slot = r.slot || 1; pl.name = "P" + pl.slot; if (pl.slot === 2) { pl.elev = 0; pl.faceKey = 1; } pl.net = r.net || null; }
+        else { pl.slot = r.slot || 1; pl.name = r.name || ("P" + pl.slot); pl.seat = r.seat == null ? null : r.seat; if (pl.slot === 2) { pl.elev = 0; pl.faceKey = 1; } pl.net = r.net || null; }
         giveWeapon(pl, "pistol"); players.push(pl);
       });
       if (!players.some(function (q) { return q.human; })) players[0].human = false;
@@ -170,7 +182,10 @@
     if (!pool.length) pool = CHARS.slice();
     var first = players.length;
     for (var i = first; i < first + nb; i++) addBot(i, pool[(i - first) % pool.length], teamMode ? ((i - first) % 2 === 0 ? 2 : 1) : 0, cfg.difficulty);
-    }    surv = cfg.mode === "survival" ? { wave: 0, timer: 60, kills: 0 } : null; tick = 0; msgs = [];
+    }
+    // COOP/VERSUS ONLINE: vagas (seat) dos jogadores que outro PC controla - o lockstep espera o input de cada uma
+    netRemoteSeats = players.filter(function (q) { return q.human && q.net === "remote"; }).map(function (q) { return q.seat; });
+    surv = cfg.mode === "survival" ? { wave: 0, timer: 60, kills: 0 } : null; tick = 0; msgs = [];
     bullets = []; fires = []; particles = []; pickups = []; grenades = []; blasts = []; pending = []; props = []; solids = map.platforms.slice();    decor = []; wsTimer = 24; portalCd = {}; gnodes = []; mapBtn = {}; glassQ = []; addGlass(cfg.map); setupRamps();
     (map.weaponSpawns || []).forEach(spawnPickup);
     hangReset(); (map.props || []).forEach(function (d) { addProp(d[0], d[1], d[2], false); });
@@ -194,7 +209,7 @@
   // Elevador do original: manivela (circulo com motor) + biela de comprimento 1.5A presa a um ponto a 0.5A do centro,
   // com o elevador guiado por uma junta prismatica. A = amplitude. Posicao exata abaixo; periodo = 2*pi/omega segundos.
   function liftOffset(l, t) {
-    var A = l.amp, th = l.om * t / 60, off = -2 * A + 0.5 * A * Math.cos(th) + Math.sqrt(2.25 * A * A - 0.25 * A * A * Math.sin(th) * Math.sin(th));
+    var A = l.amp, th = l.om * t / 60, off = -2 * A + 0.5 * A * dcos(th) + Math.sqrt(2.25 * A * A - 0.25 * A * A * dsin(th) * dsin(th));
     return l.vert ? { x: 0, y: off } : { x: off, y: 0 };
   }
   function updateLifts() {
@@ -327,7 +342,7 @@
     if (pr.air) pr.rot = (pr.rot || 0) + pr.vx * 0.06 * DT;
     if (!pr.air) { pr.vx *= 0.88; if (Math.abs(pr.vx) < 0.05) pr.vx = 0; return; }
     // voando: atingir um personagem derruba (e fere se o prop tem crush: poltrona 25; caixas no original tem CrushDamage 0 = so derruba)
-    if (Math.hypot(pr.vx, pr.vy) > 4) { pr.hit = pr.hit || [];
+    if (dhypot(pr.vx, pr.vy) > 4) { pr.hit = pr.hit || [];
       players.forEach(function (o) {
         if (o.dead || o.gone || o.ride || pr.hit.indexOf(o) >= 0 || (o === pr.by && tick - (pr.t0 || 0) < 20)) return; // quem arremessou so e atingido depois de ~20 ticks
         if (o.x + P.width / 2 < pr.x - half - 2 || o.x - P.width / 2 > pr.x + half + 2 || o.y < pr.y - H - 2 || o.y - P.height > pr.y + 2) return;
@@ -343,11 +358,11 @@
   // cada ponto dentro de um bloco rigido gera um contato (normal = face de saida mais proxima); impulso com restituicao e
   // atrito de Coulomb (mu) aplicado no ponto de contato, o que faz a poltrona rolar, girar e quicar como no original.
   function chairPoints(pr) {
-    var d = pr.def, c = Math.cos(pr.rot), s = Math.sin(pr.rot), pts = [], i, a, lx, ly;
+    var d = pr.def, c = dcos(pr.rot), s = dsin(pr.rot), pts = [], i, a, lx, ly;
     // pontos de contato: as duas quinas da base da caixa (+ meio da base) e o topo do circulo. Pontos fixos, nao o contorno inteiro
     // (com o contorno inteiro, cada ponto no chao somava atrito e a poltrona parava de uma vez).
     // o circulo tambem tem pontos: quando a poltrona gira (rot grande) a parte de baixo passa a ser o circulo, nao a caixa
-    for (i = 0; i < 8; i++) { a = i * Math.PI / 4; pts.push([pr.cx + Math.cos(a) * d.r, pr.cy + Math.sin(a) * d.r]); }
+    for (i = 0; i < 8; i++) { a = i * Math.PI / 4; pts.push([pr.cx + dcos(a) * d.r, pr.cy + dsin(a) * d.r]); }
     [[-d.hx, d.oy + d.hy], [d.hx, d.oy + d.hy], [0, d.oy + d.hy]].forEach(function (q) {
       lx = q[0]; ly = q[1]; pts.push([pr.cx + lx * c - ly * s, pr.cy + lx * s + ly * c]); });
     return pts;
@@ -399,7 +414,7 @@
     // golpe da poltrona (CheckCollisionWithBody do original): so derruba quem ela ESMAGA (cai em cima do personagem,
     // de cima pra baixo) ou quem leva um IMPACTO FORTE (explosao/chute, velocidade > STRONG). Empurrao leve nao derruba.
     // Dano (CrushDamage 25) acompanha a queda por cima e o impacto forte. pr.hit = quem ja foi atingido NESTE contato.
-    var spd = Math.hypot(pr.vx, pr.vy), now = [], STRONG = 7;
+    var spd = dhypot(pr.vx, pr.vy), now = [], STRONG = 7;
     players.forEach(function (o) {
       if (o.dead || o.gone || o.ride) return;
       if (o.x + P.width / 2 < pr.rect[0] - 2 || o.x - P.width / 2 > pr.rect[0] + pr.rect[2] + 2 || o.y < pr.rect[1] - 2 || o.y - P.height > pr.rect[1] + pr.rect[3] + 2) return;
@@ -445,14 +460,14 @@
     if (!L || !map.art || !SF.mapAnim) return;
     L.forEach(function (d, i) { lamps.push({ x0: lvx(d[0]), y0: lvy(d[1]), D: d[2] * 1.6, Dm: d[2] / 30, th: 0, om: (((i * 7 + d[0]) % 11) - 5) / 5 * 0.012, broken: false, hp: 5 }); });
   }
-  function lampPos(l) { var s = Math.sin(l.th), c = Math.cos(l.th), q = l.D + 4 * 1.6; return { x: l.x0 + s * q, y: l.y0 + c * q }; }
+  function lampPos(l) { var s = dsin(l.th), c = dcos(l.th), q = l.D + 4 * 1.6; return { x: l.x0 + s * q, y: l.y0 + c * q }; }
   function lampBreak(l) {
     if (l.broken) return; l.broken = true; play("glass1", 0.4); var p = lampPos(l);
     for (var i = 0; i < 5; i++) particles.push({ x: p.x, y: p.y + 4, vx: (rand() * 10 - 5) * 0.5 * DT, vy: -rand() * 2 * DT, life: 30, c: "#ffe27a", g: 0.2, r: 2 });
   }
   function lampUpdate() {
     for (var i = 0; i < lamps.length; i++) { var l = lamps[i];
-      l.om += -(10 / 900) / l.Dm * Math.sin(l.th) * DT; l.om *= 1 - 0.003 * DT; l.th += l.om * DT; }
+      l.om += -(10 / 900) / l.Dm * dsin(l.th) * DT; l.om *= 1 - 0.003 * DT; l.th += l.om * DT; }
   }
   function lampBullet(b) {
     for (var i = 0; i < lamps.length; i++) { var l = lamps[i], p = lampPos(l); if (Math.abs(b.x - p.x) > 8 || Math.abs(b.y - p.y) > 9) continue;
@@ -460,12 +475,12 @@
     return false;
   }
   function lampBlast(x, y, R) {
-    lamps.forEach(function (l) { var p = lampPos(l), d = Math.hypot(p.x - x, p.y - y); if (d > R) return;
+    lamps.forEach(function (l) { var p = lampPos(l), d = dhypot(p.x - x, p.y - y); if (d > R) return;
       l.om += (p.x >= x ? 1 : -1) * 0.08 * (1 - d / R); lampBreak(l); });
   }
   function lampDraw() {
     var rope = SF.spriteAlias.rope_segment_01, id = SF.spriteAlias.hanging_lamp;
-    lamps.forEach(function (l) { var s = Math.sin(l.th), c = Math.cos(l.th), st = 3 * S;
+    lamps.forEach(function (l) { var s = dsin(l.th), c = dcos(l.th), st = 3 * S;
       for (var d = 0; d < l.D; d += st) spr(rope, 1, l.x0 + s * (d + st / 2), l.y0 + c * (d + st / 2), 1, -l.th, S);
       var p = lampPos(l); if (!spr(id, l.broken ? 2 : 1, p.x, p.y, 1, -l.th, S)) { ctx.fillStyle = "#ddd"; ctx.fillRect(p.x - 6, p.y - 5, 12, 10); } });
   }
@@ -488,7 +503,7 @@
     hangImpulse(h, (rand() * 10 - 5) / 30); // ApplyForce(random*10-5, ...) do original no 1o frame: balanco leve inicial
   }
   function hangImpulse(h, J) { // impulso horizontal J (N*s) no centro da caixa -> variacao da velocidade angular (rad/frame)
-    var Dm = h.D / 48; h.om += Dm * J * Math.cos(h.th) / (SF.hang.mass * (Dm * Dm + HANG_K2)) / 30;
+    var Dm = h.D / 48; h.om += Dm * J * dcos(h.th) / (SF.hang.mass * (Dm * Dm + HANG_K2)) / 30;
   }
   function hangBlocked(h, cx, cy) { // a caixa pendurada bate na geometria fixa do mapa
     var pl = map.platforms, w2 = h.w / 2, h2 = h.h / 2;
@@ -498,9 +513,9 @@
   }
   function hangCut(h) {
     if (h.state !== "hang") return;
-    h.state = "fall"; h.hit = []; h.vx = h.om * h.D * Math.cos(h.th); h.vy = -h.om * h.D * Math.sin(h.th);
+    h.state = "fall"; h.hit = []; h.vx = h.om * h.D * dcos(h.th); h.vy = -h.om * h.D * dsin(h.th);
     play(rand() < 0.5 ? "wood1" : "wood2", 0.5);
-    var X = SF.hang, hx = h.x0 + Math.sin(h.th) * (h.D - X.holderOff), hy = h.y0 + Math.cos(h.th) * (h.D - X.holderOff), id = SF.spriteAlias.crate_debris_03;
+    var X = SF.hang, hx = h.x0 + dsin(h.th) * (h.D - X.holderOff), hy = h.y0 + dcos(h.th) * (h.D - X.holderOff), id = SF.spriteAlias.crate_debris_03;
     if (id) for (var i = 0; i < 3; i++) particles.push({ x: hx, y: hy, vx: (rand() - 0.5) * 4 * 1.6 * DT, vy: (-1 - rand() * 3) * 1.6 * DT, life: 500, g: 0.45 * DT * DT * 1.6, spr: id, rot: rand() * 6, vr: (rand() - 0.5) * 0.5, phys: true, bounce: 0.3, snd: "woodhit" });
   }
   // ESMAGAMENTO da geladeira: quem esta CAIDO (fall ou kd) e tocado pela caixa grande morre na hora (gib). Vale para a
@@ -552,8 +567,8 @@
       if (h.state === "hang") geladeiraCrush(h.cx, h.cy, h.w / 2, h.h / 2); // geladeira pendurada balancando tambem esmaga quem esta caido
       if (h.state === "hang") {
         var Dm = h.D / 48, oth = h.th;
-        h.om += -HANG_G * Dm * Math.sin(h.th) / (Dm * Dm + HANG_K2) * DT; h.om *= 1 - 0.0015 * DT; h.th += h.om * DT; // pendulo fisico (+ amortecimento minimo da junta)
-        h.cx = h.x0 + h.D * Math.sin(h.th); h.cy = h.y0 + h.D * Math.cos(h.th);
+        h.om += -HANG_G * Dm * dsin(h.th) / (Dm * Dm + HANG_K2) * DT; h.om *= 1 - 0.0015 * DT; h.th += h.om * DT; // pendulo fisico (+ amortecimento minimo da junta)
+        h.cx = h.x0 + h.D * dsin(h.th); h.cy = h.y0 + h.D * dcos(h.th);
         if (hangBlocked(h, h.cx, h.cy)) { h.th = oth; h.om *= -0.3; h.cx = ox; h.cy = oy; play("woodhit", 0.2); }
       } else hangFall(h);
       if (h.state === "done") continue;
@@ -563,7 +578,7 @@
   function hangDraw() {
     var X = SF.hang, rope = SF.spriteAlias.rope_segment_01, hold = SF.spriteAlias.crate_hanging_holder, cr = SF.spriteAlias.crate_hanging;
     hangs.forEach(function (h) { if (h.state === "done") return;
-      var s = Math.sin(h.th), c = Math.cos(h.th);
+      var s = dsin(h.th), c = dcos(h.th);
       if (h.state === "hang") {
         var len = h.D - X.attach, st = 3 * S; // segmentos 1x3 a cada 3 px (Rope.as)
         for (var d = 0; d < len; d += st) spr(rope, 1, h.x0 + s * (d + st / 2), h.y0 + c * (d + st / 2), 1, -h.th, S);
@@ -572,7 +587,7 @@
       if (h.state === "hang") spr(hold, 1, h.x0 + s * (h.D - X.holderOff), h.y0 + c * (h.D - X.holderOff), 1, -h.th, S);
     });
   }
-  function hangHolder(h) { var o = SF.hang.holderOff; return { x: h.x0 + Math.sin(h.th) * (h.D - o), y: h.y0 + Math.cos(h.th) * (h.D - o) }; }
+  function hangHolder(h) { var o = SF.hang.holderOff; return { x: h.x0 + dsin(h.th) * (h.D - o), y: h.y0 + dcos(h.th) * (h.D - o) }; }
   function hangBullet(b) { // tiro no holder (9x6 px do original) corta a corda; true = a bala parou nele
     for (var i = 0; i < hangs.length; i++) { var h = hangs[i]; if (h.state !== "hang") continue;
       var q = hangHolder(h); if (Math.abs(b.x - q.x) < 8.2 && Math.abs(b.y - q.y) < 5.8) { h.hp -= b.w.damage || 6; if (h.hp <= 0) hangCut(h); return true; } }
@@ -581,10 +596,10 @@
   function hangBlast(x, y, R) { // explosao: corta a corda de quem estiver no raio e empurra a caixa (AffectedByExplosions)
     var E = SF.explosion;
     hangs.forEach(function (h) { if (h.state === "done" || h.state === "rest") return;
-      var dx = h.cx - x, dy = h.cy - y, d = Math.hypot(dx, dy); if (d > R || rayHitsWall(x, y, h.cx, h.cy)) return;
-      var f = d <= R / 2 ? 1 : 1 - (d - R / 2) / (R / 2), a = Math.atan2(dy, dx), pw = E.power * 0.6;
+      var dx = h.cx - x, dy = h.cy - y, d = dhypot(dx, dy); if (d > R || rayHitsWall(x, y, h.cx, h.cy)) return;
+      var f = d <= R / 2 ? 1 : 1 - (d - R / 2) / (R / 2), a = datan2(dy, dx), pw = E.power * 0.6;
       if (h.state === "hang") { hangCut(h); }
-      h.vx += Math.cos(a) * pw * f * 1.6 * 0.5; h.vy = Math.min(h.vy + Math.sin(a) * pw * f * 1.6 * 0.6, -1 * 1.6 * f);
+      h.vx += dcos(a) * pw * f * 1.6 * 0.5; h.vy = Math.min(h.vy + dsin(a) * pw * f * 1.6 * 0.6, -1 * 1.6 * f);
     });
   }
   function hangKick(p, dir, rng) { // chute (impulso 1.6 do original) balanca a caixa; true se acertou alguma
@@ -753,7 +768,7 @@
       else { p.x = best.r[0] + best.r[2] + w; p.vx = 0; } }
   }
   function rayHitsWall(x1, y1, x2, y2) {
-    var steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 6);
+    var steps = Math.ceil(dhypot(x2 - x1, y2 - y1) / 6);
     for (var s = 1; s <= steps; s++) {
       var x = x1 + (x2 - x1) * s / steps, y = y1 + (y2 - y1) * s / steps;
       for (var i = 0; i < solids.length; i++) { var r = solids[i]; if (r[4] === "cloud") continue; if (x > r[0] && x < r[0] + r[2] && y > r[1] && y < r[1] + r[3]) return true; }
@@ -933,7 +948,7 @@
   }
   function armPoint(p, pt) {
     var sh = shoulderOf(p), a = p.aim, f = p.face, bx = p.x + sh[0] * S * f, by = p.y + sh[1] * S;
-    return { x: bx + S * (Math.cos(a) * pt[0] + Math.cos(a + Math.PI / 2) * pt[1] * f), y: by + S * (Math.sin(a) * pt[0] + Math.sin(a + Math.PI / 2) * pt[1] * f) };
+    return { x: bx + S * (dcos(a) * pt[0] + dcos(a + Math.PI / 2) * pt[1] * f), y: by + S * (dsin(a) * pt[0] + dsin(a + Math.PI / 2) * pt[1] * f) };
   }
   function fx(name, x, y, rot, flip, scale) { var id = SF.spriteAlias[name], m = id && SF.sprites[id]; if (!m) return; particles.push({ x: x, y: y, vx: 0, vy: 0, g: 0, life: m.n / DT, anim: id, nf: m.n, age: 0, rot: rot || 0, flip: flip || 1, sc: scale || 1 }); }
   // um tiro da sequencia (sem recarga: quem controla o ritmo e a sequencia em updateSeq)
@@ -946,20 +961,20 @@
     if (p.ammo <= 0) pending.push({ t: 1, fn: function () { dropWeapon(p); } });
     // recuo: empurra o atirador para tras, proporcional ao "pushback" da arma (NAO existe fisicamente no original, so visual/senti-
     // mento; so se aplica no chao, senao empurraria o pulo/queda de forma estranha). Pistola e lanca-chamas nao tem recuo (a pedido).
-    if (p.onGround && !w.rocket && p.weapon !== "pistol" && p.weapon !== "flamethrower") p.kx += -Math.cos(aimAngle) * (w.pushback || 10) * P.recoilKick * DT;
+    if (p.onGround && !w.rocket && p.weapon !== "pistol" && p.weapon !== "flamethrower") p.kx += -dcos(aimAngle) * (w.pushback || 10) * P.recoilKick * DT;
     var arm = armOf(p), o = armPoint(p, arm.fire), ox = o.x, oy = o.y;
     if (w.flame) { // labareda: nao e bala, vive em fires[]
       if (!(p.flameSnd > tick)) { p.flameSnd = tick + 8; playAny(w.sound); }
       var fa = aimAngle + (rand() - 0.5) * 2 * w.spread * Math.PI / 180, fs = w.speed * (0.85 + rand() * 0.3);
-      fires.push({ kind: "flame", x: ox, y: oy, vx: Math.cos(fa) * fs, vy: Math.sin(fa) * fs, dist: 0, range: w.range, owner: p, w: w, hit: [], age: 0, f0: (rand() * 4) | 0 });
+      fires.push({ kind: "flame", x: ox, y: oy, vx: dcos(fa) * fs, vy: dsin(fa) * fs, dist: 0, range: w.range, owner: p, w: w, hit: [], age: 0, f0: (rand() * 4) | 0 });
       return true;
     }
     playAny(w.sound);
     for (var n = 0; n < w.pellets; n++) { // velocidade do original (px do nivel/frame) x1.6
       var a = aimAngle + (rand() - 0.5) * 2 * w.spread * Math.PI / 180, sp = w.speed * 1.6;
-      bullets.push({ x: ox, y: oy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, owner: p, w: w, dist: 0, age: 0, avoid: [], spr: arm.bullet });
+      bullets.push({ x: ox, y: oy, vx: dcos(a) * sp, vy: dsin(a) * sp, owner: p, w: w, dist: 0, age: 0, avoid: [], spr: arm.bullet });
     }
-    var mz = armPoint(p, arm.muz); if (arm.flash) fx(arm.flash, mz.x, mz.y, Math.atan2(Math.sin(aimAngle), Math.abs(Math.cos(aimAngle))), p.face, S);
+    var mz = armPoint(p, arm.muz); if (arm.flash) fx(arm.flash, mz.x, mz.y, datan2(dsin(aimAngle), Math.abs(dcos(aimAngle))), p.face, S);
     fx("smoke_weapon_muzzle", mz.x, mz.y - 2, 0, 1, S * 0.8);
     if (arm.casing && !w.rocket) { var sh = armPoint(p, arm.shell), cid = SF.spriteAlias[arm.casing]; // capsula ejetada com fisica
       if (cid) particles.push({ x: sh.x, y: sh.y, vx: (-p.face * (0.6 + rand() * 0.8)) * 1.6 * DT, vy: (-1.5 - rand() * 1.2) * 1.6 * DT, g: 0.35 * DT * DT * 1.6, life: 360, spr: cid, rot: 0, vr: (rand() - 0.5) * 0.5, phys: true, bounce: 0.45, snd: "shellbounce" }); }
@@ -996,13 +1011,13 @@
       var b = bullets[i], steps = 4, dead = false, bdir = b.vx >= 0 ? 1 : -1;
       b.age += DT;
       if (b.w.rocket) { // trajetoria do original (UpdateRockets): oscila +-4 graus por update, metade da velocidade com alguem preso, e quem carrega gira com cima/baixo
-        var rang = Math.atan2(b.vy, b.vx), rsp = b.w.speed * 1.6 * (b.rider ? 0.5 : 1);
-        if (b.rider && b.rider.human) { var rsl = b.rider.slot || 1; if (held(rsl, "up")) rang -= 20 * DT * Math.PI / 180; if (held(rsl, "down")) rang += 20 * DT * Math.PI / 180; }
+        var rang = datan2(b.vy, b.vx), rsp = b.w.speed * 1.6 * (b.rider ? 0.5 : 1);
+        if (b.rider && b.rider.human) { var rk = virtualKeys(b.rider); if (rk.up) rang -= 20 * DT * Math.PI / 180; if (rk.down) rang += 20 * DT * Math.PI / 180; } // le o input do dono (teclado local ou o que chegou pela rede)
         rang += (rand() * 8 - 4) * DT * Math.PI / 180;
-        b.vx = Math.cos(rang) * rsp; b.vy = Math.sin(rang) * rsp;
+        b.vx = dcos(rang) * rsp; b.vy = dsin(rang) * rsp;
       }
       for (var s = 0; s < steps && !dead; s++) {
-        var dx = b.vx * DT / steps, dy = b.vy * DT / steps; b.x += dx; b.y += dy; b.dist += Math.hypot(dx, dy);
+        var dx = b.vx * DT / steps, dy = b.vy * DT / steps; b.x += dx; b.y += dy; b.dist += dhypot(dx, dy);
         if (b.dist > 2600 || b.x < -50 || b.x > map.width + 50 || b.y < -200 || b.y > map.height + 50) { dead = true; break; }
         if (hangBullet(b) || lampBullet(b)) { dead = true; break; }
         for (var k = 0; k < solids.length; k++) { var r = solids[k]; if (r[4] === "cloud" || r.noPlayer) continue; // arma vazia no chao: a bala passa
@@ -1010,7 +1025,7 @@
           if (b.x > r[0] && b.x < r[0] + r[2] && b.y > r[1] && b.y < r[1] + r[3]) { dead = true; if (r.prop) { hitProp(r.prop, b.w.rocket ? 0 : b.w.damage, false, true, true);
               if (r.prop.def.fly && !b.w.rocket) { r.prop.vx += bdir * (b.w.pellets > 1 ? 0.6 : 1.5); r.prop.by = b.owner; r.prop.t0 = tick; } // tiro: recuo leve na poltrona
               play(r.prop ? "woodhit" : "metal", 0.2); }
-            if (!b.w.rocket) { fx("bullet_impact", b.x - dx, b.y - dy, Math.atan2(-b.vy, -b.vx), 1, S);
+            if (!b.w.rocket) { fx("bullet_impact", b.x - dx, b.y - dy, datan2(-b.vy, -b.vx), 1, S);
               for (var q = 0; q < 3; q++) particles.push({ x: b.x - dx, y: b.y - dy, vx: (-bdir * rand() * 2 + (rand() - 0.5)) * DT * 1.6, vy: (-rand() * 2) * DT * 1.6, life: 30, c: "#ffd070", g: 0.3 * DT * DT * 1.6, r: 2 }); }
             break; } }
         if (dead) break;
@@ -1044,7 +1059,7 @@
   }
   // sangue do original: particulas que voam na direcao do tiro e grudam no chao/paredes
   function bleed(o, x, y, vx, vy) {
-    var sp = Math.hypot(vx, vy) || 1, nx = vx / sp, ny = vy / sp, ids = [SF.spriteAlias.blood_particle_small, SF.spriteAlias.blood_particle_big];
+    var sp = dhypot(vx, vy) || 1, nx = vx / sp, ny = vy / sp, ids = [SF.spriteAlias.blood_particle_small, SF.spriteAlias.blood_particle_big];
     for (var i = 0; i < 4; i++) { var s2 = (1 + rand() * 2) * 1.6 * DT;
       particles.push({ x: x, y: y, vx: nx * s2 + (rand() - 0.5) * DT, vy: ny * s2 - rand() * 1.5 * DT, g: 0.4 * DT * DT * 1.6, life: 240, spr: ids[i & 1], rot: 0, vr: 0, phys: true, stick: true, c: "#a01818", r: 2 }); }
   }
@@ -1053,7 +1068,7 @@
   // A energia dos raios bloqueados (m = soma de r - distancia) e redistribuida aos livres: power = min(m/livres*0.25, r/2) e r cresce
   // por esse tanto. Resultado: explosao em sala fechada alcanca mais longe, e NAO atravessa parede (quem esta do outro lado nao leva).
   var BN = 36, BCOS = [], BSIN = [];
-  for (var bi = 0; bi < BN; bi++) { BCOS.push(Math.cos(bi * 2 * Math.PI / BN)); BSIN.push(Math.sin(bi * 2 * Math.PI / BN)); }
+  for (var bi = 0; bi < BN; bi++) { BCOS.push(dcos(bi * 2 * Math.PI / BN)); BSIN.push(dsin(bi * 2 * Math.PI / BN)); }
   function blastSolid(px, py) {
     for (var i = 0; i < solids.length; i++) { var r = solids[i]; if (r.glass) continue; if (px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3]) return r; }
     return null;
@@ -1089,15 +1104,15 @@
     var E = SF.explosion, sh = blastShape(x, y), R = sh.r; x = sh.x; y = sh.y;
     play("explosion" + ((rand() * 4) | 0), 0.7); shake = Math.max(shake, 12); hangBlast(x, y, R); lampBlast(x, y, R);
     blasts.push({ x: x, y: y, life: 18, max: 18, r: R });
-    solids.forEach(function (r) { if (!r.glass) return; var cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2; if (Math.hypot(cx - x, cy - y) <= R && inBlast(sh, cx, cy)) glassQ.push(r); }); // explosao quebra vidro
+    solids.forEach(function (r) { if (!r.glass) return; var cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2; if (dhypot(cx - x, cy - y) <= R && inBlast(sh, cx, cy)) glassQ.push(r); }); // explosao quebra vidro
     for (var i = 0; i < 26; i++) { var a = rand() * 6.283, sp = 1 + rand() * 4, ri = Math.round(a / (2 * Math.PI / BN)) % BN, lim = sh.dist[ri] / R;
-      particles.push({ x: x, y: y, vx: Math.cos(a) * sp * Math.min(1, lim + 0.2), vy: Math.sin(a) * sp * Math.min(1, lim + 0.2) - 1, life: 20 + rand() * 25, c: i % 3 ? "#ff9a2a" : "#555", g: 0.02, r: 3 + rand() * 4 }); }
+      particles.push({ x: x, y: y, vx: dcos(a) * sp * Math.min(1, lim + 0.2), vy: dsin(a) * sp * Math.min(1, lim + 0.2) - 1, life: 20 + rand() * 25, c: i % 3 ? "#ff9a2a" : "#555", g: 0.02, r: 3 + rand() * 4 }); }
     players.forEach(function (p) {
       if (p.dead || p.gone) return;
       var cx = p.x, cy = p.y - 17; if (!inBlast(sh, cx, cy)) return; // so quem esta dentro da forma (parede protege)
-      var dx = cx - x, dy = cy - y, d = Math.hypot(dx, dy);
-      var f = d <= R / 2 ? 1 : Math.max(0, 1 - (d - R / 2) / (R / 2)), a = Math.atan2(dy, dx); if (f <= 0) return;
-      if (!(p.imm > 0)) { p.kx += Math.cos(a) * E.power * f * DT; p.vy = Math.min(p.vy + Math.sin(a) * E.power * f * 2.2 * DT, -3 * DT); }
+      var dx = cx - x, dy = cy - y, d = dhypot(dx, dy);
+      var f = d <= R / 2 ? 1 : Math.max(0, 1 - (d - R / 2) / (R / 2)), a = datan2(dy, dx); if (f <= 0) return;
+      if (!(p.imm > 0)) { p.kx += dcos(a) * E.power * f * DT; p.vy = Math.min(p.vy + dsin(a) * E.power * f * 2.2 * DT, -3 * DT); }
       var dmg = E.damage * f; // ExplosionHit(angulo, 5*f, 20*f): dano > 10 derruba, <= 10 so cambaleia; abate com 20 (centro) vira pedacos
       damage(p, dmg, owner, false, false, { gib: dmg >= E.damage * 0.5, dir: dx >= 0 ? 1 : -1 });
       if (!p.dead && !(p.imm > 0)) { if (dmg > E.damage * 0.5) knock(p, (dx >= 0 ? 1 : -1) * 3, -3, dx >= 0 ? -1 : 1); else if (!p.fall) p.stag = SF.melee.staggerMin + rand() * SF.melee.staggerRand; }
@@ -1109,12 +1124,12 @@
       if (pr.dying) return;
       var cx = pr.x, cy = pr.y - pr.def.h / 2, ri = rayHit.indexOf(pr), inside = inBlast(sh, cx, cy);
       if (!inside && ri < 0) return;
-      var dx = cx - x, dy = cy - 4 - y, d = Math.hypot(dx, dy), f = 0, ea = Math.atan2(dy, dx);
+      var dx = cx - x, dy = cy - 4 - y, d = dhypot(dx, dy), f = 0, ea = datan2(dy, dx);
       if (inside) f = d <= R / 2 ? 1 : Math.max(0, 1 - (d * 2 - R) / R);
       if (ri >= 0) f = Math.max(f, Math.min(1, (1 - d / r0) * 4) * Math.min(1, 0.4 + rayDmg[ri] * 0.1)); // so os raios bateram no corpo: (1-d/r)*4 do original, mais forte quanto mais raios
       var dmg = (inside ? E.propDamage : 0) + (ri >= 0 ? rayDmg[ri] * E.propDamage * 0.1 : 0);
       if (dmg > 0) hitProp(pr, dmg, true, true);
-      if (f > 0 && !pr.dying) launchProp(pr, Math.cos(ea) * 6.25 * S * f * 0.9, Math.min(Math.sin(ea) * 6.25 * S * f * 0.9, -2.2 * S * f), owner);
+      if (f > 0 && !pr.dying) launchProp(pr, dcos(ea) * 6.25 * S * f * 0.9, Math.min(dsin(ea) * 6.25 * S * f * 0.9, -2.2 * S * f), owner);
     });
   }
   // instant: tiro, soco/chute/arma branca (qualquer golpe que acerta) ou reacao em cadeia de outra explosao - um barril/lata
@@ -1143,7 +1158,7 @@
   // do galao e sem parede no meio pega fogo na hora (BurnState = 100). Unidades: px do port = original x1.6; tick = DT frames.
   var gnodes = [];
   function fireBlocked(x1, y1, x2, y2) {
-    var n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 4));
+    var n = Math.max(1, Math.ceil(dhypot(x2 - x1, y2 - y1) / 4));
     for (var i = 1; i < n; i++) { var qx = x1 + (x2 - x1) * i / n, qy = y1 + (y2 - y1) * i / n;
       for (var k = 0; k < solids.length; k++) { var r = solids[k]; if (r[4] === "cloud" || r.prop || thinR(r)) continue; if (qx > r[0] && qx < r[0] + r[2] && qy > r[1] && qy < r[1] + r[3]) return true; } }
     return false;
@@ -1151,15 +1166,15 @@
   function gasBurst(x, y, owner) {
     play("fireplosion", 0.5); shake = Math.max(shake, 3);
     for (var i = 0; i < 18; i++) { var ang = Math.PI * 2 / 18 * i, sp = (2.2 + rand() * 0.4) * 1.6;
-      gnodes.push({ x: x + Math.cos(ang) * 3 * 1.6, y: y + Math.sin(ang) * 3 * 1.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - rand() * 0.5 * 1.6, slow: true, owner: owner }); }
+      gnodes.push({ x: x + dcos(ang) * 3 * 1.6, y: y + dsin(ang) * 3 * 1.6, vx: dcos(ang) * sp, vy: dsin(ang) * sp - rand() * 0.5 * 1.6, slow: true, owner: owner }); }
     players.forEach(function (o) { if (o.dead || o.gone) return; var dx = o.x - x, dy = (o.y - 17) - y;
-      if (Math.hypot(dx, dy) <= 16 * 1.6 && !fireBlocked(x, y, o.x, o.y - 17)) ignite(o, owner); });
+      if (dhypot(dx, dy) <= 16 * 1.6 && !fireBlocked(x, y, o.x, o.y - 17)) ignite(o, owner); });
   }
   function updateGasNodes() {
     for (var i = gnodes.length - 1; i >= 0; i--) {
       var g = gnodes[i];
       g.vx *= Math.pow(0.9, DT);
-      if (g.slow) { g.vy *= Math.pow(0.9, DT); if (Math.hypot(g.vx, g.vy) <= 2 * 1.6) g.slow = false; } else g.vy += 0.2 * 1.6 * DT;
+      if (g.slow) { g.vy *= Math.pow(0.9, DT); if (dhypot(g.vx, g.vy) <= 2 * 1.6) g.slow = false; } else g.vy += 0.2 * 1.6 * DT;
       var ox = g.x, oy = g.y, landed = false;
       g.x += g.vx * DT; g.y += g.vy * DT;
       for (var k = 0; k < solids.length; k++) { var r = solids[k]; if (r[4] === "cloud" || thinR(r)) continue;
@@ -1175,7 +1190,7 @@
   function throwGrenade(p, aim, fuse, weak) { // weak (0-1): forca reduzida, usada so no Disarm (DropThrowable: cai aos pes, nao e arremessada)
     if (p.gren <= 0) return; p.gren--;
     var G = SF.grenade, spd = weak != null ? weak : 1;
-    grenades.push({ x: p.x + Math.cos(aim) * 8, y: p.y - 22 + Math.sin(aim) * 8, vx: (Math.cos(aim) * G.speed * DT + p.vx * 0.5) * spd, vy: (Math.sin(aim) * G.speed - 3.2) * DT * spd, t: fuse != null ? fuse : G.fuse / DT, owner: p, rot: 0, mol: p.gtype === "molotov" });
+    grenades.push({ x: p.x + dcos(aim) * 8, y: p.y - 22 + dsin(aim) * 8, vx: (dcos(aim) * G.speed * DT + p.vx * 0.5) * spd, vy: (dsin(aim) * G.speed - 3.2) * DT * spd, t: fuse != null ? fuse : G.fuse / DT, owner: p, rot: 0, mol: p.gtype === "molotov" });
   }
   // ---------- fogo: poças (molotov), labaredas (lanca-chamas) e jogadores em chamas ----------
   function ignite(o, by) { var F = SF.fire; if (o.dead) return; if (by && by !== o && o.team && by.team === o.team) return; o.burn = Math.max(o.burn || 0, F.ignite); o.burnBy = by; }
@@ -1202,7 +1217,7 @@
       // labareda: anda em 2 passos, para na parede, atravessa jogadores (cada um so e atingido uma vez por labareda)
       var dead = false;
       for (var s = 0; s < 2 && !dead; s++) {
-        f.x += f.vx * DT / 2; f.y += f.vy * DT / 2; f.vy -= 0.01; f.dist += Math.hypot(f.vx, f.vy) * DT / 2;
+        f.x += f.vx * DT / 2; f.y += f.vy * DT / 2; f.vy -= 0.01; f.dist += dhypot(f.vx, f.vy) * DT / 2;
         if (f.dist > f.range || f.x < 0 || f.x > map.width || f.y < 0 || f.y > map.height) { dead = true; break; }
         for (k = 0; k < solids.length; k++) { r = solids[k]; if (r[4] === "cloud") continue;
           if (f.x > r[0] && f.x < r[0] + r[2] && f.y > r[1] && f.y < r[1] + r[3]) { dead = true; if (r.prop) hitProp(r.prop, F.flameProp);
@@ -1320,7 +1335,7 @@
     for (i = 0; i < N.length; i++) for (j = i + 1; j < N.length; j++) {
       var dx = N[j].x - N[i].x, dy = N[j].y - N[i].y; if (Math.abs(dx) > 26 || Math.abs(dy) > STEP + 0.5) continue;
       if (Math.abs(dx) > 8 && !groundNear((N[i].x + N[j].x) / 2, (N[i].y + N[j].y) / 2, STEP + 1)) continue;
-      var c = Math.hypot(dx, dy); addEdge(i, j, "walk", c, {}); addEdge(j, i, "walk", c, {});
+      var c = dhypot(dx, dy); addEdge(i, j, "walk", c, {}); addEdge(j, i, "walk", c, {});
       hasN[i][dx > 0 ? "1" : "-1"] = true; hasN[j][dx > 0 ? "-1" : "1"] = true;
     }
     function landEdge(i, s, t, dir, cost, extra) {
@@ -1386,7 +1401,7 @@
     var foes = players.filter(function (o) { return o !== p && !o.dead && !o.gone && (!p.team || o.team !== p.team); });
     if (!foes.length) return spawnList[(rand() * spawnList.length) | 0];
     var scored = spawnList.map(function (s) {
-      var d = Infinity; foes.forEach(function (o) { d = Math.min(d, Math.hypot(o.x - s[0], o.y - s[1])); }); return { s: s, d: d };
+      var d = Infinity; foes.forEach(function (o) { d = Math.min(d, dhypot(o.x - s[0], o.y - s[1])); }); return { s: s, d: d };
     }).sort(function (a, b) { return b.d - a.d; });
     var topN = Math.max(1, Math.ceil(scored.length * 0.4));
     return scored[(rand() * topN) | 0].s;
@@ -1410,7 +1425,7 @@
   function navInput(p, tx, ty, inp) {
     var a = p.ai, N = nav.nodes; if (!N.length) return false;
     a.nr = (a.nr || 0) - 1;
-    if (!a.path || ((a.nr <= 0 || Math.hypot(tx - a.gx, ty - a.gy) > 50) && p.onGround && !p.climb)) { // nao replaneja no ar nem na escada
+    if (!a.path || ((a.nr <= 0 || dhypot(tx - a.gx, ty - a.gy) > 50) && p.onGround && !p.climb)) { // nao replaneja no ar nem na escada
       var si = nodeAny(p.x, p.y), gi = nodeAny(tx, ty); a.gx = tx; a.gy = ty; a.nr = 40; a.pi = 0; a.go = false;
       a.path = si === gi ? [] : findPath(si, gi);
     }
@@ -1420,7 +1435,7 @@
     while (e && Math.abs(p.x - N[e.to].x) < 9 && Math.abs(p.y - N[e.to].y) < 14 && p.onGround) { navStat(e.t, 1); a.pi++; a.go = false; e = a.path[a.pi]; }
     if (!e) { mv(tx); return true; }
     var F = N[e.from], T = N[e.to];
-    if (p.onGround && !p.climb && e.t.indexOf("lift") !== 0 && Math.hypot(p.x - F.x, p.y - F.y) > 45 && Math.hypot(p.x - T.x, p.y - T.y) > 45) { navStat(e.t, 0); a.nr = 0; } // saiu da rota
+    if (p.onGround && !p.climb && e.t.indexOf("lift") !== 0 && dhypot(p.x - F.x, p.y - F.y) > 45 && dhypot(p.x - T.x, p.y - T.y) > 45) { navStat(e.t, 0); a.nr = 0; } // saiu da rota
     if (e.t === "walk") mv(T.x);
     else if (e.t === "jump") {
       if (p.onGround) { if (!a.go && Math.abs(p.x - F.x) > 4) mv(F.x); else { a.go = true; inp.jump = true; if (e.dir > 0) inp.right = true; else if (e.dir < 0) inp.left = true; } }
@@ -1447,7 +1462,7 @@
   // ---------- IA ----------
   function botInput(p) {
     var a = p.ai, best = null, bd = 1e9;
-    players.forEach(function (o) { if (o !== p && !o.dead && !(o.team && o.team === p.team)) { var d = Math.hypot(o.x - p.x, o.y - p.y); if (d < bd) { bd = d; best = o; } } });
+    players.forEach(function (o) { if (o !== p && !o.dead && !(o.team && o.team === p.team)) { var d = dhypot(o.x - p.x, o.y - p.y); if (d < bd) { bd = d; best = o; } } });
     var inp = { left: false, right: false, jump: false, drop: false, shoot: false, melee: false, aim: p.aim };
     if (!best) return inp;
     // arma de fogo com municao -> atira; sem ela (ou colado no alvo) -> corpo a corpo com o slot melee
@@ -1475,17 +1490,17 @@
       if (!navInput(p, tgt.x, tgt.y, inp)) { if (tgt.x > p.x + 4) inp.right = true; else if (tgt.x < p.x - 4) inp.left = true; if (p.onGround && a.jumpCd <= 0 && tgt.y < p.y - 40) { inp.jump = true; a.jumpCd = 40; } }
     }
     a.aimErr += (rand() - 0.5) * 0.02 * [2.4, 1, 0.35][p.skill]; a.aimErr *= 0.98;
-    inp.aim = Math.atan2(dy, dx) + a.aimErr;
+    inp.aim = datan2(dy, dx) + a.aimErr;
     if (w.melee) { // aperta o golpe quando o alvo esta no alcance e continua o combo (borda: alterna o botao)
       var inReach = Math.abs(dx) <= mReach && Math.abs(best.y - p.y) < 18 && !best.fall && !(best.kd > 0);
       if (p.atk) inp.melee = (tick & 1) === 0 && rand() < [0.35, 0.7, 0.95][p.skill];
       else if (inReach && clear) { inp.melee = (tick & 1) === 0 && rand() < [0.25, 0.5, 0.8][p.skill]; if (dx > 0) inp.right = true; else inp.left = true; }
     } else if (clear && bd < w.range && rand() < [0.3, 0.6, 0.9][p.skill]) inp.shoot = true;
-    if (p.gren > 0 && clear && bd > 120 && bd < 300 && rand() < 0.008) { inp.grenade = true; inp.aim = Math.atan2(dy - bd * 0.25, dx); }
+    if (p.gren > 0 && clear && bd > 120 && bd < 300 && rand() < 0.008) { inp.grenade = true; inp.aim = datan2(dy - bd * 0.25, dx); }
     return inp;
   }
-  function nearestPickup(p, maxd) { var best = null, bd = maxd; pickups.forEach(function (k) { if (k.respawn > 0 || SF.items[k.type]) return; var d = Math.hypot(k.x - p.x, k.y - p.y); if (d < bd) { bd = d; best = k; } }); return best; }
-  function nearestPickupKind(p, kind, maxd) { var best = null, bd = maxd; pickups.forEach(function (k) { if (k.respawn > 0 || k.type !== kind) return; var d = Math.hypot(k.x - p.x, k.y - p.y); if (d < bd) { bd = d; best = k; } }); return best; }
+  function nearestPickup(p, maxd) { var best = null, bd = maxd; pickups.forEach(function (k) { if (k.respawn > 0 || SF.items[k.type]) return; var d = dhypot(k.x - p.x, k.y - p.y); if (d < bd) { bd = d; best = k; } }); return best; }
+  function nearestPickupKind(p, kind, maxd) { var best = null, bd = maxd; pickups.forEach(function (k) { if (k.respawn > 0 || k.type !== kind) return; var d = dhypot(k.x - p.x, k.y - p.y); if (d < bd) { bd = d; best = k; } }); return best; }
 
   // ---------- sobrevivencia: ondas de bots, sem respawn ----------
   function updateSurvival() {
@@ -1533,10 +1548,10 @@
   // ---------- teclas virtuais, postura de mira, chute, rolamento, arremesso e pegar arma ----------
   // le o teclado/mouse real deste PC para o slot do jogador (uso normal e, no COOP ONLINE, so pro jogador local - ver virtualKeys)
   function readLocalKeys(p) {
-    var sl = p.slot || 1, k = { left: held(sl, "left"), right: held(sl, "right"), up: held(sl, "up"), down: held(sl, "down"), melee: held(sl, "melee"), fire: held(sl, "fire"), throw: held(sl, "throw"), pow: held(sl, "powerup") };
+    var sl = netActive ? 1 : (p.slot || 1), k = { left: held(sl, "left"), right: held(sl, "right"), up: held(sl, "up"), down: held(sl, "down"), melee: held(sl, "melee"), fire: held(sl, "fire"), throw: held(sl, "throw"), pow: held(sl, "powerup") };
     if (sl === 1 && cfg.mouse) { // opcional (SET UP): mouse mira, botao esquerdo = Fire, direito = Throw
       k.fire = k.fire || mouse.down; k.throw = k.throw || mouse.right;
-      k.mouseAim = Math.atan2(cam.vy + mouse.y / cam.s - (p.y - 22), cam.vx + mouse.x / cam.s - p.x);
+      k.mouseAim = datan2(cam.vy + mouse.y / cam.s - (p.y - 22), cam.vx + mouse.x / cam.s - p.x);
     }
     return k;
   }
@@ -1546,7 +1561,11 @@
       // COOP ONLINE (lockstep): nunca le o teclado "ao vivo" aqui dentro do update() - cada tick usa o input que foi
       // CAPTURADO e trocado com o outro PC antes (ver netCapture()/frame()); sem isso os dois lados simulariam com
       // teclas de instantes diferentes e o jogo desincronizaria (cada PC veria um resultado diferente da luta).
-      if (netActive) return (p.net === "remote" ? netRemoteIn[tick] : p.net === "local" ? netLocalIn[tick] : null) || EMPTY_KEYS;
+      if (netActive) {
+        if (p.net === "local") return netLocalIn[tick] || EMPTY_KEYS;
+        var rm = p.net === "remote" ? netRemoteIn[p.seat] : null; // jogador de outro PC: input da vaga dele
+        return (rm && rm[tick]) || EMPTY_KEYS;
+      }
       return readLocalKeys(p);
     }
     var b = botInput(p); p.binp = b; return { left: b.left, right: b.right, up: !!b.jump, down: false, melee: !!b.melee, fire: false, throw: false, bot: true, drop: !!b.drop };
@@ -1562,7 +1581,7 @@
     else { a.hold = 0; a.idleAim = 0; k.fire = !!(b.shoot && p.weapon && p.ammo > 0 && !(p.cd > 0)); k.throw = !!b.grenade; }
     if (p.pow && b.shoot && rand() < 0.01) usePowerup(p);
     if (p.aiming) { // vira para o alvo e ajusta o pitch direto
-      var want = Math.cos(b.aim) >= 0 ? 1 : -1, tgt = Math.atan2(Math.sin(b.aim), Math.abs(Math.cos(b.aim))) * 180 / Math.PI;
+      var want = dcos(b.aim) >= 0 ? 1 : -1, tgt = datan2(dsin(b.aim), Math.abs(dcos(b.aim))) * 180 / Math.PI;
       p.pitch += Math.max(-25, Math.min(25, tgt - p.pitch));
       k.left = want < 0; k.right = want > 0;
     }
@@ -1582,8 +1601,8 @@
     if (p.aiming === 1 && !w) { holster(p); return; }
     if (meleeEdge) { holster(p); return; } // Melee com a arma sacada: guarda
     if (k.mouseAim != null && !k.bot) {
-      var want = Math.cos(k.mouseAim) >= 0 ? 1 : -1; if (want !== p.face) { p.face = want; p.turnT = M.turnFrames; }
-      p.pitch = Math.atan2(Math.sin(k.mouseAim), Math.abs(Math.cos(k.mouseAim))) * 180 / Math.PI;
+      var want = dcos(k.mouseAim) >= 0 ? 1 : -1; if (want !== p.face) { p.face = want; p.turnT = M.turnFrames; }
+      p.pitch = datan2(dsin(k.mouseAim), Math.abs(dcos(k.mouseAim))) * 180 / Math.PI;
     } else {
       var dir = k.right && !k.left ? 1 : k.left && !k.right ? -1 : 0;
       if (dir && dir !== p.face && !(p.turnT > 0)) { p.face = dir; p.turnT = M.turnFrames; } // virar com a arma leva um instante
@@ -1779,13 +1798,13 @@
   function drawAim() {
     players.forEach(function (p) {
       if (p.dead || !p.aiming || p.drawT > 0) return;
-      var arm = armOf(p), a = p.aim, st = armPoint(p, arm.aim), x = st.x, y = st.y, stepX = Math.cos(a) * 2 * S, stepY = Math.sin(a) * 2 * S;
+      var arm = armOf(p), a = p.aim, st = armPoint(p, arm.aim), x = st.x, y = st.y, stepX = dcos(a) * 2 * S, stepY = dsin(a) * 2 * S;
       if (p.human) {
         for (var i = 0; i < 8; i++) { if (solidAt(x + stepX, y + stepY, null)) break; x += stepX; y += stepY; }
         ctx.fillStyle = "#000"; ctx.fillRect(x - 2.4, y - 2.4, 4.8, 4.8); ctx.fillStyle = "#fff"; ctx.fillRect(x - 1.6, y - 1.6, 3.2, 3.2);
       }
       if (p.aiming === 1 && arm.laser) { // LaserSight (sniper): pontos vermelhos ate bater em algo
-        var l = armPoint(p, arm.laser), lx = l.x, ly = l.y, dx = Math.cos(a) * 4, dy = Math.sin(a) * 4;
+        var l = armPoint(p, arm.laser), lx = l.x, ly = l.y, dx = dcos(a) * 4, dy = dsin(a) * 4;
         ctx.fillStyle = "rgba(255,40,40,0.7)";
         for (var n = 0; n < 400; n++) { lx += dx; ly += dy; if (solidAt(lx, ly, null) || lx < 0 || lx > map.width || ly < 0 || ly > map.height) break;
           if (players.some(function (o) { if (o === p || o.dead) return false; var hb = hitbox(o); return hb && lx > hb.x1 && lx < hb.x2 && ly > hb.y1 && ly < hb.y2; })) break;
@@ -1957,7 +1976,7 @@
     if (p.imm > 0 && !p.dead && (Math.floor(p.imm * 2) % 3 === 0)) ctx.globalAlpha = 0.2; // pisca imune (como o original)
     if (p.ride && ch.ROCKET_RIDE_R) { // abracado ao foguete, girado pelo angulo dele (ROCKET_RIDE do original)
       var rb = p.ride, rr = (rb.vx >= 0 ? ch.ROCKET_RIDE_R : ch.ROCKET_RIDE_L) || ch.ROCKET_RIDE_R, rrn = SF.sprites[rr.ANIM] ? SF.sprites[rr.ANIM].n : 1;
-      ctx.save(); ctx.translate(p.x, p.y - P.height / 2); ctx.rotate(Math.atan2(rb.vy, rb.vx)); spr(rr.ANIM, 1 + ((tick >> 1) % rrn), 0, 0, 1, 0, S); ctx.restore(); ok = true;
+      ctx.save(); ctx.translate(p.x, p.y - P.height / 2); ctx.rotate(datan2(rb.vy, rb.vx)); spr(rr.ANIM, 1 + ((tick >> 1) % rrn), 0, 0, 1, 0, S); ctx.restore(); ok = true;
     } else if (p.fall && ch.FALL_F) { // FALL_F/FALL_B: um quadro girando em volta do centro do corpo
       var fid = (p.fallF ? ch.FALL_F : ch.FALL_B).ANIM; ctx.save(); ctx.translate(p.x, p.y - 17); ctx.rotate(p.rot * Math.PI / 180 * fl); spr(fid, 1, 0, 17, fl, 0, S); ctx.restore(); ok = true;
     } else if (p.kd > 0 && ch.KNOCKDOWN) { ok = spr(ch.KNOCKDOWN.ANIM, clip(ch.KNOCKDOWN.ANIM, p.kd), p.x, p.y, fl, 0, S); }
@@ -1971,7 +1990,7 @@
       if (aid) {
         var dy0 = 0;
         if (an.type === "dive") { // o clipe DIVE tem a origem no meio do corpo (nao nos pes): sobe metade da altura pra nao afundar no piso, + arco do salto do Dive() original
-          var dm = SF.sprites[aid.ANIM]; dy0 = (dm.h - dm.oy) * S + Math.sin(Math.min(1, an.f / SF.melee.diveFrames) * Math.PI) * 5 * S; }
+          var dm = SF.sprites[aid.ANIM]; dy0 = (dm.h - dm.oy) * S + dsin(Math.min(1, an.f / SF.melee.diveFrames) * Math.PI) * 5 * S; }
         ok = spr(aid.ANIM, clip(aid.ANIM, 1 + an.f), p.x, p.y - dy0, fl, 0, S);
       } }
     else if (p.aiming === 1 && w) { // sacar (START_x), virar (AIM_TURN) e mirar (corpo sem braco + braco girando com o pitch)
@@ -2009,7 +2028,7 @@
     g.globalCompositeOperation = "destination-in"; g.drawImage(im, 0, 0); signCache[key] = c; return c;
   }
   function drawSign(p, x, y, sc) {
-    var rgb = p.team ? TEAM_RGB[p.team] : [230, 230, 230], c = signCanvas(p.human ? (p.slot || 1) : 3, rgb), m = SF.sprites[SF.spriteAlias.hud_sign]; if (!c) return;
+    var rgb = p.team ? TEAM_RGB[p.team] : [230, 230, 230], c = signCanvas(p.human ? Math.min(p.slot || 1, 2) : 3, rgb), m = SF.sprites[SF.spriteAlias.hud_sign]; if (!c) return;
     ctx.drawImage(c, x - m.ox * sc, y - m.oy * sc, c.width * sc, c.height * sc);
   }
   var demoOverheads = false;
@@ -2110,7 +2129,7 @@
     var gid = SF.spriteAlias.wpn_grenade_thrown, mid = SF.spriteAlias.wpn_molotov_thrown;
     grenades.forEach(function (g) { if (!spr(g.mol && mid ? mid : gid, 1, g.x, g.y, 1, g.rot, S)) { ctx.fillStyle = "#4a6"; ctx.fillRect(g.x - 3, g.y - 3, 6, 6); } });
     ctx.fillStyle = "#ffe27a"; bullets.forEach(function (b) {
-      if (b.w.rocket) { if (!spr(SF.spriteAlias.bazooka_rocket, 1 + ((tick >> 1) % 4), b.x, b.y, 1, Math.atan2(b.vy, b.vx), S)) ctx.fillRect(b.x - 4, b.y - 2, 8, 4); return; }
+      if (b.w.rocket) { if (!spr(SF.spriteAlias.bazooka_rocket, 1 + ((tick >> 1) % 4), b.x, b.y, 1, datan2(b.vy, b.vx), S)) ctx.fillRect(b.x - 4, b.y - 2, 8, 4); return; }
       ctx.fillRect(b.x - 2, b.y - 1, 4, 2); });
     blasts.forEach(function (b) { var t = 1 - b.life / b.max, r = b.r * (0.4 + 0.6 * Math.sqrt(t)), gr = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
       gr.addColorStop(0, "rgba(255,255,200," + (1 - t) + ")"); gr.addColorStop(0.5, "rgba(255,150,30," + (0.8 * (1 - t)) + ")"); gr.addColorStop(1, "rgba(255,60,0,0)");
@@ -2252,20 +2271,22 @@
   // ida-e-volta - numa conexao rapida (mesma cidade/wifi) fica bem pequeno (2 ticks = ~33ms, o piso) em vez de sempre
   // "pesado"; so cresce de verdade se a rede realmente for lenta. Cada lado ajusta o SEU PROPRIO atraso de forma
   // independente (nao precisa combinar com o outro PC - so afeta quanto ESSE lado espera antes de rodar cada tick).
-  var netActive = false, netLocalIn = {}, netRemoteIn = {}, captureTick = 1, NET_MAXLEAD = 180;
+  var netActive = false, netLocalIn = {}, netRemoteIn = {}, netRemoteSeats = [], captureTick = 1, NET_MAXLEAD = 180; // netRemoteIn[vaga][tick] = teclas
   var NET_DELAY_MIN = 2, NET_DELAY_MAX = 30, NET_DELAY_MARGIN = 25; // ms de folga alem do ping, pra absorver variacao (jitter)
   function netDelay() {
     var rtt = (SF.net && SF.net.rtt()) || 150; // sem nenhuma amostra ainda (comeco da conexao): chute conservador
     var oneWayMs = rtt / 2 + NET_DELAY_MARGIN;
     return Math.max(NET_DELAY_MIN, Math.min(NET_DELAY_MAX, Math.ceil(oneWayMs / (1000 / 60))));
   }
+  function netDropped() { // alguem saiu (ou a sala caiu) no meio da partida: nao da pra continuar sem essa pessoa
+    if (!netActive) return; netActive = false;
+    if (running && !ended) { paused = true; if (SF.onPause) SF.onPause(true); }
+    if (SF.onNetDrop) SF.onNetDrop();
+  }
   if (SF.net) {
-    SF.net.onInput(function (t, k) { netRemoteIn[t] = k; });
-    SF.net.onClose(function () {
-      if (!netActive) return; netActive = false;
-      if (running && !ended) { paused = true; if (SF.onPause) SF.onPause(true); }
-      if (SF.onNetDrop) SF.onNetDrop();
-    });
+    SF.net.onInput(function (from, m) { var q = netRemoteIn[from] || (netRemoteIn[from] = {}); q[m.t] = m.k; });
+    SF.net.onClose(function () { netDropped(); });
+    SF.net.onPeer(function (ev) { if (ev === "leave") netDropped(); });
   }
   function netLocalPlayer() { for (var i = 0; i < players.length; i++) if (players[i].net === "local") return players[i]; return null; }
   function netCapture() {
@@ -2277,13 +2298,16 @@
   function netTickReady() {
     if (!netActive) return true;
     var T = tick + 1;
-    return captureTick - T >= netDelay() && netRemoteIn[T] !== undefined;
+    if (captureTick - T < netDelay()) return false;
+    for (var i = 0; i < netRemoteSeats.length; i++) { var q = netRemoteIn[netRemoteSeats[i]]; if (!q || q[T] === undefined) return false; }
+    return true;
   }
-  // 1 tick do COOP ONLINE: captura+manda o input local, e so simula se ja tiver os dois lados prontos (senao fica parado nesse tick)
+  // 1 tick do COOP ONLINE: captura+manda o input local, e so simula se ja tiver o input de TODOS os outros jogadores (senao fica parado nesse tick)
   function netTick() {
     netCapture();
     if (paused || ended || !netTickReady()) return;
-    update(); delete netLocalIn[tick]; delete netRemoteIn[tick];
+    update(); delete netLocalIn[tick];
+    netRemoteSeats.forEach(function (s) { if (netRemoteIn[s]) delete netRemoteIn[s][tick]; });
   }
   var last = 0, acc = 0;
   function frame(t) {

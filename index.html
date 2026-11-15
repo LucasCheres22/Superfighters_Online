@@ -22,12 +22,13 @@
   #coopui .actions{margin-top:14px}
   #overlay{display:none;position:absolute;inset:0;background:rgba(8,10,14,.82);align-items:center;justify-content:center;z-index:5}
   #overlay.on{display:flex}
-  #ovbox{background:#000;border:2px solid var(--fg);padding:22px 28px;min-width:300px;max-width:90%;text-align:left}
+  #ovbox{background:#000;border:2px solid var(--fg);padding:22px 28px;min-width:300px;max-width:90%;max-height:96%;overflow-y:auto;text-align:left}
   #ovtitle{margin:0 0 6px;color:var(--acc);font-size:22px;font-family:sfpixel,ui-monospace,Consolas,monospace;letter-spacing:2px}
   #ovextra{color:var(--dim);margin-bottom:10px}
   table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:13px}
   td,th{padding:4px 8px;text-align:left;border-bottom:1px solid var(--line)} th{color:var(--dim);font-weight:normal}
   tr.you td{color:var(--acc)}
+  table.compact{margin:4px 0 8px} table.compact td,table.compact th{padding:1px 6px}
 </style>
 </head>
 <body>
@@ -42,9 +43,7 @@
     <div class="actions" id="ovbtns"></div>
   </div></div>
 </div>
-<!-- PeerJS: so usado pelo COOP ONLINE (requer internet); "defer" pra nao atrasar o jogo offline se a rede estiver lenta/fora do ar -->
-<script defer src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<!-- COOP ONLINE: URL do relay no Render (ex.: "wss://superfighters-relay.onrender.com"). Vazio = usa o P2P (PeerJS). -->
+<!-- ONLINE (versus ate 8 jogadores): URL do relay no Render. Sem ela o botao COOP ONLINE nao funciona. -->
 <script>window.SF_RELAY_URL = "wss://superfighters-relay.onrender.com";</script>
 <script src="src/net.js"></script>
 <script src="data/fonts.js"></script>
