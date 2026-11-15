@@ -1,0 +1,107 @@
+﻿SUPERFIGHTERS HTML5 (recriacao para mods)
+
+JOGAR: de dois cliques em index.html (ou Jogar.bat). Funciona offline, em qualquer
+PC/Mac/Linux com navegador moderno. Sem instalar nada, sem servidor.
+Pode copiar a pasta inteira para pendrive.
+
+PASTAS
+  data/    armas e mapas (valores reais extraidos do jogo original)
+  mods/    seus mods: crie um .js e adicione o nome em mods/load.js (veja exemplo.js)
+  assets/  sons (e futuramente sprites): troque os arquivos para mudar sons
+  src/     motor do jogo
+
+Os sons e valores do jogo original pertencem aos criadores (Mythologic).
+Uso pessoal/modding; nao redistribua.
+
+MAPAS: os 7 mapas do SWF vem de data/maps_swf.js (gerado por tools/convmaps.ps1 a partir do Maps.as exportado).
+F3 no jogo mostra as caixas de colisao (rosa), escadas (laranja), portais (ciano).
+SPRITES: os clipes START_* (sacar arma) vinham do SWF sem ponto de registro (ox=oy=0) e afundavam no chao; corrigido ao
+carregar (pes no centro-base). O clipe DIVE tem origem no meio do corpo: e desenhado levantado + arco do salto.
+RECARGA: com a arma em recarga (ex: shotgun) apertar Fire de novo nao volta a sacar/mirar - so 1 comando por vez.
+VIDA: medkit/pilula pega sozinho ao pisar so se estiver machucado; com a barra cheia so leva com Baixo+Melee (nega ao inimigo).
+ARMAS NO MAPA: nesses 7 mapas, armas nascem sozinhas a cada 3s num ponto livre (WeaponSpawn.as do original) - "livre"
+agora considera QUALQUER item por perto (40px), nao so os que o proprio spawn automatico colocou; sem isso, uma arma
+largada por um jogador perto de um ponto de spawn nao impedia uma nova nascer bem em cima (empilhando).
+
+BOTS: o grafo de navegacao e gerado do mapa ao iniciar (F3 mostra: amarelo=salto, laranja=queda, azul=escada, rosa=portal).
+No console: SF.api.navReport() diagnostica conexoes de um mapa; SF.api.step(n) roda n ticks sem renderizar.
+
+IMAGENS: data/images.js embute todos os PNGs (rode tools\embed_images.ps1 se mudar algo em assets/).
+ELEVADORES: mapas com lifts (Telhados, Zona Perigosa, Delegacia, Deposito); acido na Zona Perigosa mata abaixo da linha killY.
+  FISICA: o pouso em cima de um elevador aceita o topo dele de ANTES ou DEPOIS de mover no tick (collide()); sem isso, um
+  elevador subindo mais rapido que a queda do jogador passava por ele sem nunca "pousar" (cai direto, sai do mapa pra sempre).
+  Em qualquer mapa: sair do mapa (y > altura+100) mata na hora e NUNCA e bloqueado por imunidade - sem essa excecao, um
+  jogador caindo num buraco durante os 48 frames de imunidade do inicio da partida cairia para sempre sem nunca morrer.
+  Elevador horizontal (os que correm de lado): o personagem vira o sprite pra acompanhar a direcao que esta sendo
+  carregado (sem isso ficava "de costas", parado olhando pro lado errado enquanto era arrastado).
+
+CAMERA: zoom adaptativo como no original (Cam.as): enquadra todos os jogadores vivos em 4:3, limita ao mapa. Mapas podem forcar o mapa inteiro com showAll:true.
+
+CONTROLES (iguais ao original, so teclado; remapeaveis em SET UP > EDIT CONTROLS):
+  P1: setas = mover / cima pula / baixo agacha;  N = melee;  M = atirar;  virgula = granada;  ponto = powerup
+  P2: W A S D;  1 = melee;  2 = atirar;  3 = granada;  4 = powerup
+  M (segure) SACA a arma e entra em mira; cima/baixo inclinam a mira (acelera); SOLTAR M da o tiro; 6 frames depois volta ao normal.
+  N com a arma sacada GUARDA a arma. N sem inimigo a frente: chute (em derrubados/objetos). Baixo+N pega arma/item do chao.
+  Baixo + esquerda/direita = rolamento. Virgula (segure) saca a granada, soltar joga (segurar demais explode na mao).
+  Melee: combo de 3 golpes (N de novo no meio da animacao); o 3o derruba. N no ar = voadora. Ponto/4 = usar powerup (slowmotion).
+  Fire/granada apertado no ar comeca a mirar ao pousar. No ar o personagem nao vira (so se desloca), como no original.
+  CORRER: aperte a mesma direcao 2x rapido (double-tap, CONFIG SIMPLE do original) pra correr a 2x (RunSpeed() dobrado); solte ou
+  mude de lado pra cancelar. Gasta uma barra de energia (p.energy, SF.player.energy*) que regenera parado/andando devagar;
+  sem energia minima nao da pra comecar a correr. Bots tambem correm de vez em quando (chance por dificuldade).
+  MERGULHO (Dive do original): Baixo+esquerda/direita enquanto corre (em vez de so rolar parado) vira um mergulho mais
+  rapido (diveSpeed, quase o dobro do rolamento), com animacao propria (DIVE no sprite do personagem, 1 quadro so -
+  pose de mergulho, nao uma sequencia). Quem for atingido de frente e AGARRADO e arrastado junto (p.grabbed) ate o
+  mergulho acabar, so entao cai derrubado (CheckDivePlayerImpact do original) - em vez de ser so empurrado na hora do
+  toque. Sem estar correndo continua o rolamento normal (so esquiva 90% dos tiros, nao agarra nem derruba). Gasta
+  energia (diveEnergy).
+  Mira: quadradinho a 16 px do cano (AIM_POSITION do SWF); sniper tem laser. Tiros saem do FIRE_CENTER de cada arma, com flash,
+  capsula ejetada com fisica propria e um pequeno recuo no atirador (recoilKick; NAO existe no original, so sensacao/visual).
+  Alvos: caixa de acerto muda com a postura (em pe/agachado/rolando/derrubado/corpo); rolando esquiva 90% dos tiros; corpos sao
+  empurrados pelo tiro. Pushback (cambaleio/derrubada por tiro) decai sozinho se parar de levar bala (pushDelay/pushDecay em
+  SF.melee), entao so rajadas RAPIDAS acumulam ate 100 e desequilibram; tiros espacados nao tem efeito cumulativo (como no original).
+  DESARME: todo soco/golpe (mesmo o 1o do combo) desarma quem apanhou - arma de fogo cai no chao com a municao que sobrou,
+  granada/molotov na mao e solta na hora (sem forca de arremesso). So guardar a arma (N) nao desarma, so apanhar.
+  PEGAR ARMA (UpdateWeaponGrab/GrabWeapon do original): com o slot vazio (sem arma de fogo, ou so com os punhos no corpo
+  a corpo), encostar numa arma no chao pega sozinho, sem apertar nada. Com o slot ocupado, so troca com Baixo+N, e a
+  arma antiga cai no mesmo lugar (com a municao que sobrou) em vez de so sumir. Pistola/arma de fogo que fica sem bala
+  cai sozinha no chao (libera o slot na hora, nao precisa descartar na mao); arma vazia no chao nao e pega sozinha
+  (so com troca explicita), pra nao ficar inutil ocupando o slot. Granadas sempre comecam cheias (3) ao nascer/renascer.
+  PORTAIS (Portals.as do original): so ativa andando de verdade PRA DENTRO (de frente, na direcao do movimento) - um
+  tiro, chute, queda ou ser carregado por elevador ate ali NAO ativa mais sozinho (so "estar" no lugar nao bastava antes).
+  Powerups: pilulas (+25), medkit (+50), slowmo 5 s / 10 s. Ultimo abate da rodada = 2 s de camera lenta. Valores em data/weapons.js.
+  IMUNIDADE: 48 frames (SetStartImmunity) so no INICIO da partida pra todos; respawn no meio do jogo NAO da imunidade (fiel ao
+  original - Revive() nao chama isso), mas o respawn escolhe um ponto longe dos inimigos vivos (original nao tem essa checagem,
+  so pra nao nascer colado e morrer de novo na hora). Imunidade NUNCA bloqueia a morte por sair do mapa (ver ELEVADORES/fisica).
+MENUS: recriados do original (MenuMain.as e Code/Data/Menu): 1 PLAYER/2 PLAYERS > VS MODE/SURVIVAL > plates dos jogadores > numero de bots
+  > plates dos bots (personagem/time/dificuldade) > mapa e modo de jogo > FIGHT!. Setas navegam, Espaco/Enter aceita, Esc/Backspace volta.
+  Arte = PNGs exportados do SWF em assets/menu; posicoes lidas da display list (tools/swfdump.js). STAGE MODE e TUTORIAL ainda nao existem.
+VELOCIDADE: fixa em SF.player.runScale / gravityScale (data/weapons.js).
+FONTE: assets/fonts/04b03_*.ttf (extraida do SWF) embutida em data/fonts.js; so tem os glifos usados no original (sem acentos como c-cedilha/til).
+
+COOP ONLINE: NAO existe no jogo original (Superfighters so tinha multiplayer local, duas pessoas no mesmo teclado); ADICIONADO
+  a pedido do usuario para jogar com alguem em outro PC, em outra rede, pela internet. Botao "COOP ONLINE" no canto superior
+  direito do menu principal.
+  COMO FUNCIONA: e peer-to-peer (WebRTC) - o trafego da partida vai direto de um PC pro outro, sem passar por nenhum servidor
+  nosso. So a sinalizacao inicial (os dois PCs se acharem na internet) usa o servidor publico gratuito da PeerJS; depois disso
+  a conexao e direta. Requer internet nos dois lados (carregada de um CDN; se estiver offline o botao avisa e nao funciona -
+  o resto do jogo continua 100% offline normalmente). Pode falhar em redes com NAT/firewall muito restritivo (corporativo,
+  por ex.) ja que nao ha servidor TURN configurado para esses casos - funciona na maioria das redes residenciais.
+  HOSPEDAR: gera um codigo (5 letras/numeros); passe pro outro jogador. ENTRAR COM CODIGO: digite o codigo recebido.
+  Depois de conectar, so quem hospedou escolhe mapa/modo/bots (telas normais do menu) - o convidado so espera; ao apertar
+  FIGHT!, os dois comecam a MESMA partida ao mesmo tempo (o anfitriao manda a configuracao e uma semente para o outro PC).
+  LOCKSTEP: os dois PCs simulam o jogo inteiro (fisica, bots, acertos) em paralelo, de forma determinista (mesma semente,
+  mesmo RNG - ver rng()/seedRng() em game.js), trocando so as TECLAS apertadas a cada tick (nao a posicao dos jogadores).
+  Isso significa: 1) os dois tem SEMPRE o mesmo resultado de qualquer coisa aleatoria (quem o bot mira, dano critico, item
+  sorteado...); 2) ha um atraso de entrada nos dois lados (inclusive pra quem hospeda) do tamanho do PING REAL medido
+  entre os dois PCs (ping/pong em net.js, SF.net.rtt(); formula em netDelay() no game.js) + uma folga pequena pra
+  absorver variacao da rede - NAO e mais um valor fixo "pesado": numa conexao rapida (mesma cidade/wifi) fica perto do
+  piso (2 ticks, ~33ms); so cresce de verdade se a rede for realmente lenta. Isso e esperado, nao e bug, e o preco de
+  garantir que os dois vejam exatamente a mesma luta - so que agora do tamanho minimo que a conexao realmente exige, em
+  vez de sempre no pior caso; 3) se a conexao atrasar MAIS que esse atraso medido (variacao repentina de ping), o jogo
+  CONGELA esperando o pacote do outro lado em vez de desincronizar - ele simplesmente retoma sozinho assim que o pacote
+  chegar. SF.api.netDebug() no console mostra o ping medido e o atraso (em ticks) que esta sendo usado no momento.
+  LIMITACOES CONHECIDAS (nao sao bugs, sao o escopo do que foi pedido): pausar (Esc) congela o jogo dos dois, mas so quem
+  apertou ve a tela de pausa; o anfitriao controla os dois personagens na tela de selecao (o convidado nao escolhe o proprio
+  personagem/time antes de comecar); se a conexao cair no meio da partida, nao da pra retomar, so voltar ao menu; sem
+  servidor TURN, pode nao funcionar atras de NAT muito restritivo. Codigo em src/net.js (transporte) e nas partes marcadas
+  "COOP ONLINE"/netActive/netCapture/netTick em src/game.js e src/menu.js.

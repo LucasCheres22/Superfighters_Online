@@ -1,0 +1,1325 @@
+{
+ "note": "sprites de mira/sacar de todos os personagens (estados START_* e AIM_*). Copias de assets/sprites; o original continua la.",
+ "rows": [
+  {
+   "char": "johnny",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 663
+  },
+  {
+   "char": "johnny",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 665
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 667
+  },
+  {
+   "char": "johnny",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 669
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 671
+  },
+  {
+   "char": "johnny",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 673
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 675
+  },
+  {
+   "char": "johnny",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 677
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 679
+  },
+  {
+   "char": "johnny",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 681
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 684
+  },
+  {
+   "char": "johnny",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 686
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 688
+  },
+  {
+   "char": "johnny",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 690
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 692
+  },
+  {
+   "char": "johnny",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 694
+  },
+  {
+   "char": "johnny",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 696
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 698
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 700
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 702
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 704
+  },
+  {
+   "char": "johnny",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 716
+  },
+  {
+   "char": "boris",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 827
+  },
+  {
+   "char": "boris",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 829
+  },
+  {
+   "char": "boris",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 830
+  },
+  {
+   "char": "boris",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 832
+  },
+  {
+   "char": "boris",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 834
+  },
+  {
+   "char": "boris",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 836
+  },
+  {
+   "char": "boris",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 838
+  },
+  {
+   "char": "boris",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 840
+  },
+  {
+   "char": "boris",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 842
+  },
+  {
+   "char": "boris",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 844
+  },
+  {
+   "char": "boris",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 847
+  },
+  {
+   "char": "boris",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 849
+  },
+  {
+   "char": "boris",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 851
+  },
+  {
+   "char": "boris",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 853
+  },
+  {
+   "char": "boris",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 854
+  },
+  {
+   "char": "boris",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 856
+  },
+  {
+   "char": "boris",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 858
+  },
+  {
+   "char": "boris",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 860
+  },
+  {
+   "char": "boris",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 861
+  },
+  {
+   "char": "boris",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 863
+  },
+  {
+   "char": "boris",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 865
+  },
+  {
+   "char": "boris",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 874
+  },
+  {
+   "char": "blood",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 972
+  },
+  {
+   "char": "blood",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 974
+  },
+  {
+   "char": "blood",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 976
+  },
+  {
+   "char": "blood",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 978
+  },
+  {
+   "char": "blood",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 980
+  },
+  {
+   "char": "blood",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 982
+  },
+  {
+   "char": "blood",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 984
+  },
+  {
+   "char": "blood",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 986
+  },
+  {
+   "char": "blood",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 988
+  },
+  {
+   "char": "blood",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 990
+  },
+  {
+   "char": "blood",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 993
+  },
+  {
+   "char": "blood",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 995
+  },
+  {
+   "char": "blood",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 997
+  },
+  {
+   "char": "blood",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 999
+  },
+  {
+   "char": "blood",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1001
+  },
+  {
+   "char": "blood",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1003
+  },
+  {
+   "char": "blood",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1005
+  },
+  {
+   "char": "blood",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1007
+  },
+  {
+   "char": "blood",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1009
+  },
+  {
+   "char": "blood",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1011
+  },
+  {
+   "char": "blood",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1013
+  },
+  {
+   "char": "blood",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1025
+  },
+  {
+   "char": "agent",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1177
+  },
+  {
+   "char": "agent",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1179
+  },
+  {
+   "char": "agent",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1181
+  },
+  {
+   "char": "agent",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1183
+  },
+  {
+   "char": "agent",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1185
+  },
+  {
+   "char": "agent",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1187
+  },
+  {
+   "char": "agent",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1189
+  },
+  {
+   "char": "agent",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1191
+  },
+  {
+   "char": "agent",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1193
+  },
+  {
+   "char": "agent",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 1195
+  },
+  {
+   "char": "agent",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 1198
+  },
+  {
+   "char": "agent",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 1200
+  },
+  {
+   "char": "agent",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 1202
+  },
+  {
+   "char": "agent",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 1204
+  },
+  {
+   "char": "agent",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1206
+  },
+  {
+   "char": "agent",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1208
+  },
+  {
+   "char": "agent",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1210
+  },
+  {
+   "char": "agent",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1212
+  },
+  {
+   "char": "agent",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1214
+  },
+  {
+   "char": "agent",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1216
+  },
+  {
+   "char": "agent",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1218
+  },
+  {
+   "char": "agent",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1230
+  },
+  {
+   "char": "burnt",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 827
+  },
+  {
+   "char": "burnt",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 829
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 830
+  },
+  {
+   "char": "burnt",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 832
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 834
+  },
+  {
+   "char": "burnt",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 836
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 838
+  },
+  {
+   "char": "burnt",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 840
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 842
+  },
+  {
+   "char": "burnt",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 844
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 847
+  },
+  {
+   "char": "burnt",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 849
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 851
+  },
+  {
+   "char": "burnt",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 853
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 854
+  },
+  {
+   "char": "burnt",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 856
+  },
+  {
+   "char": "burnt",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 858
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 860
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 861
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 863
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 865
+  },
+  {
+   "char": "burnt",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 874
+  },
+  {
+   "char": "billy",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1387
+  },
+  {
+   "char": "billy",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1389
+  },
+  {
+   "char": "billy",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1391
+  },
+  {
+   "char": "billy",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1393
+  },
+  {
+   "char": "billy",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1395
+  },
+  {
+   "char": "billy",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1397
+  },
+  {
+   "char": "billy",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1399
+  },
+  {
+   "char": "billy",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1401
+  },
+  {
+   "char": "billy",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1403
+  },
+  {
+   "char": "billy",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 1405
+  },
+  {
+   "char": "billy",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 1408
+  },
+  {
+   "char": "billy",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 1410
+  },
+  {
+   "char": "billy",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 1412
+  },
+  {
+   "char": "billy",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 1414
+  },
+  {
+   "char": "billy",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1416
+  },
+  {
+   "char": "billy",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1418
+  },
+  {
+   "char": "billy",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1420
+  },
+  {
+   "char": "billy",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1422
+  },
+  {
+   "char": "billy",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1424
+  },
+  {
+   "char": "billy",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1426
+  },
+  {
+   "char": "billy",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1428
+  },
+  {
+   "char": "billy",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1440
+  },
+  {
+   "char": "scott",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1528
+  },
+  {
+   "char": "scott",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1530
+  },
+  {
+   "char": "scott",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1532
+  },
+  {
+   "char": "scott",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1534
+  },
+  {
+   "char": "scott",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1536
+  },
+  {
+   "char": "scott",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1538
+  },
+  {
+   "char": "scott",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1540
+  },
+  {
+   "char": "scott",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1542
+  },
+  {
+   "char": "scott",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1544
+  },
+  {
+   "char": "scott",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 1546
+  },
+  {
+   "char": "scott",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 1549
+  },
+  {
+   "char": "scott",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 1551
+  },
+  {
+   "char": "scott",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 1553
+  },
+  {
+   "char": "scott",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 1555
+  },
+  {
+   "char": "scott",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1557
+  },
+  {
+   "char": "scott",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1559
+  },
+  {
+   "char": "scott",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1561
+  },
+  {
+   "char": "scott",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1563
+  },
+  {
+   "char": "scott",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1565
+  },
+  {
+   "char": "scott",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1567
+  },
+  {
+   "char": "scott",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1569
+  },
+  {
+   "char": "scott",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1581
+  },
+  {
+   "char": "funnyman",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1701
+  },
+  {
+   "char": "funnyman",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1703
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1705
+  },
+  {
+   "char": "funnyman",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1707
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1709
+  },
+  {
+   "char": "funnyman",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1711
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1713
+  },
+  {
+   "char": "funnyman",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1715
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1717
+  },
+  {
+   "char": "funnyman",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 1719
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 1722
+  },
+  {
+   "char": "funnyman",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 1724
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 1726
+  },
+  {
+   "char": "funnyman",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 1728
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1730
+  },
+  {
+   "char": "funnyman",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1732
+  },
+  {
+   "char": "funnyman",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1734
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1736
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1738
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1740
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1742
+  },
+  {
+   "char": "funnyman",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1754
+  },
+  {
+   "char": "mac",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1842
+  },
+  {
+   "char": "mac",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1844
+  },
+  {
+   "char": "mac",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1846
+  },
+  {
+   "char": "mac",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1848
+  },
+  {
+   "char": "mac",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1850
+  },
+  {
+   "char": "mac",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1852
+  },
+  {
+   "char": "mac",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1854
+  },
+  {
+   "char": "mac",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1856
+  },
+  {
+   "char": "mac",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1858
+  },
+  {
+   "char": "mac",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 1860
+  },
+  {
+   "char": "mac",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 1863
+  },
+  {
+   "char": "mac",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 1865
+  },
+  {
+   "char": "mac",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 1867
+  },
+  {
+   "char": "mac",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 1869
+  },
+  {
+   "char": "mac",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 1871
+  },
+  {
+   "char": "mac",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 1873
+  },
+  {
+   "char": "mac",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 1875
+  },
+  {
+   "char": "mac",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 1877
+  },
+  {
+   "char": "mac",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 1879
+  },
+  {
+   "char": "mac",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 1881
+  },
+  {
+   "char": "mac",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 1883
+  },
+  {
+   "char": "mac",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 1895
+  },
+  {
+   "char": "jeff",
+   "state": "START_PISTOL",
+   "part": "d1",
+   "id": 1983
+  },
+  {
+   "char": "jeff",
+   "state": "START_PISTOL",
+   "part": "ANIM",
+   "id": 1985
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_PISTOL",
+   "part": "ANIM_WPN",
+   "id": 1987
+  },
+  {
+   "char": "jeff",
+   "state": "START_MAGNUM",
+   "part": "ANIM",
+   "id": 1989
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_MAGNUM",
+   "part": "ANIM_WPN",
+   "id": 1991
+  },
+  {
+   "char": "jeff",
+   "state": "START_RIFLE",
+   "part": "ANIM",
+   "id": 1993
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_RIFLE",
+   "part": "ANIM_WPN",
+   "id": 1995
+  },
+  {
+   "char": "jeff",
+   "state": "START_UZI",
+   "part": "ANIM",
+   "id": 1997
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_UZI",
+   "part": "ANIM_WPN",
+   "id": 1999
+  },
+  {
+   "char": "jeff",
+   "state": "START_SHOTGUN",
+   "part": "ANIM",
+   "id": 2001
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_SHOTGUN",
+   "part": "ANIM_WPN",
+   "id": 2004
+  },
+  {
+   "char": "jeff",
+   "state": "START_SNIPER",
+   "part": "ANIM",
+   "id": 2006
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_SNIPER",
+   "part": "ANIM_WPN",
+   "id": 2008
+  },
+  {
+   "char": "jeff",
+   "state": "START_BAZOOKA",
+   "part": "ANIM",
+   "id": 2010
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_BAZOOKA",
+   "part": "ANIM_WPN",
+   "id": 2012
+  },
+  {
+   "char": "jeff",
+   "state": "START_FLAMETHROWER",
+   "part": "d1",
+   "id": 2014
+  },
+  {
+   "char": "jeff",
+   "state": "START_FLAMETHROWER",
+   "part": "ANIM",
+   "id": 2016
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_FLAMETHROWER",
+   "part": "ANIM_WPN",
+   "id": 2018
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_GRENADE",
+   "part": "ANIM",
+   "id": 2020
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_GRENADE",
+   "part": "ANIM_WPN",
+   "id": 2022
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_MOLOTOV",
+   "part": "ANIM",
+   "id": 2024
+  },
+  {
+   "char": "jeff",
+   "state": "AIM_TURN",
+   "part": "ANIM",
+   "id": 2036
+  }
+ ]
+}
