@@ -152,7 +152,7 @@
   function reset() {
     // cfg.seed (COOP ONLINE): os dois PCs recebem a mesma semente do anfitriao antes de comecar, pra sortear os mesmos numeros.
     seedRng(cfg.seed != null ? cfg.seed : ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0));
-    netActive = !!cfg.net; netLocalIn = {}; netRemoteIn = {}; captureTick = 1;
+    netActive = !!cfg.net; netLocalIn = {}; netRemoteIn = {}; captureTick = 1; netHashes = {}; netPeerHashes = {}; netDesynced = false;
     RK = P.runScale || 1; GK = P.gravityScale || 1; JK = Math.sqrt(GK); // fixos em data/weapons.js (SF.player)
     map =SF.maps[cfg.map] || SF.maps.rooftops || SF.maps.warehouse; if (map.art) loadArt(map.art); if (map.front) loadArt(map.front); canvas.width = VIEW_W; canvas.height = VIEW_H; ctx.imageSmoothingEnabled = false; solids = map.platforms.slice();
     buildNav(); computeSpawns(); // antes dos props entrarem em solids
@@ -2178,7 +2178,7 @@
   // step(n): roda n ticks de simulacao sem renderizar (testes automaticos e ferramentas de mod). No COOP ONLINE passa
   // pelo mesmo caminho do frame() real (captura/espera o input do outro lado) - util pra testar sem depender de
   // requestAnimationFrame (que fica pausado com a aba/painel escondido).
-  function step(n) { for (var i = 0; i < n && !ended; i++) { if (netActive) netTick(); else update(); } }
+  function step(n) { for (var i = 0; i < n && !ended; i++) { if (netActive) netStep(); else update(); } }
   // ---------- ambiente de depuracao (tecla F9) ----------
   // Captura ampliada de um personagem numa pose, com o nome de cada sprite desenhado, a caixa (w x h, ox/oy) e o ponto de
   // origem de cada peca, e grade de pixel. Nao altera a partida: o personagem e uma copia desenhada fora da tela.
@@ -2257,10 +2257,18 @@
   })();
 
   SF.api = { ramps: function () { return ramps; }, dropWeapon: function (p) { dropWeapon(p); }, unstick: function (p) { unstickPlayer(p); return [p.x, p.y]; }, cam: function () { return cam; }, navStats: function () { return navStats; }, step: step, navReport: navReport, nav: function () { return nav; }, players: function () { return players; }, props: function () { return props; }, explode: explode, blastShape: blastShape, solids: function () { return solids; }, give: giveWeapon, throwGrenade: throwGrenade, say: say, play: play, draw: function () { render(); }, slow: function () { return slow; }, slowSpeed: slowSpeed,
-    netDebug: function () { return { active: netActive, paused: paused, running: running, tick: tick, captureTick: captureTick, rtt: SF.net && SF.net.rtt(), delayTicks: netActive ? netDelay() : null, localKeys: Object.keys(netLocalIn), remoteKeys: Object.keys(netRemoteIn) }; },
+    netDebug: function () { return { active: netActive, paused: paused, running: running, tick: tick, captureTick: captureTick, lead: captureTick - (tick + 1), desynced: netDesynced, rtt: SF.net && SF.net.rtt(), delayTicks: netActive ? netDelay() : null, localKeys: Object.keys(netLocalIn), remoteKeys: Object.keys(netRemoteIn),
+      remoteSeats: netRemoteSeats.slice(), netReady: netTickReady(), hashes: Object.keys(netHashes).length,
+      remoteNext: netRemoteSeats.map(function (s) { var q = netRemoteIn[s] || {}; var ks = Object.keys(q).map(Number); return [s, q[tick + 1] !== undefined, ks.length, ks.length ? Math.max.apply(null, ks) : null]; }) }; },
     lamps: function () { return lamps; }, pickups: function () { return pickups; }, fires: function () { return fires; }, gasNodes: function () { return gnodes; }, hangs: function () { return hangs; }, bullets: function () { return bullets; }, hitProp: hitProp, mapBtn: function () { return mapBtn; }, solids: function () { return solids; } };
 
   // ---------- COOP ONLINE: lockstep ----------
+  // CORRECAO (a versao anterior travava): antes a captura do teclado rodava a cada frame mesmo com a simulacao parada esperando
+  // o outro PC, e a fila so parava em 180 ticks = 3 s de atraso entre apertar a tecla e ver o efeito; alem disso o tempo de
+  // espera era descartado, entao o jogo ficava em camera lenta. Agora: (1) a captura mantem SO netDelay() ticks de input local
+  // "no ar" (atraso de comando fixo e pequeno); (2) se falta o input do outro lado, a simulacao espera SEM consumir o tempo e
+  // depois corre pra alcancar (ate NET_CATCHUP_MS); (3) inputs remotos sao validados e normalizados (netKeys); (4) a cada
+  // NET_HASH_EVERY ticks os PCs trocam um hash do estado e avisam se divergirem (SF.onNetDesync).
   // Os dois PCs simulam o jogo inteiro (nao so um host); cada um so manda pro outro as TECLAS que apertou, tick a tick
   // (SF.net.sendInput). Pra isso dar certo os dois tem que executar cada tick com o MESMO par de teclas (local+remota),
   // entao: 1) cada tick usa rand() seedada igual (ver reset()); 2) o input de cada lado so e CONSUMIDO (netTickReady)
@@ -2271,8 +2279,12 @@
   // ida-e-volta - numa conexao rapida (mesma cidade/wifi) fica bem pequeno (2 ticks = ~33ms, o piso) em vez de sempre
   // "pesado"; so cresce de verdade se a rede realmente for lenta. Cada lado ajusta o SEU PROPRIO atraso de forma
   // independente (nao precisa combinar com o outro PC - so afeta quanto ESSE lado espera antes de rodar cada tick).
-  var netActive = false, netLocalIn = {}, netRemoteIn = {}, netRemoteSeats = [], captureTick = 1, NET_MAXLEAD = 180; // netRemoteIn[vaga][tick] = teclas
-  var NET_DELAY_MIN = 2, NET_DELAY_MAX = 30, NET_DELAY_MARGIN = 25; // ms de folga alem do ping, pra absorver variacao (jitter)
+  var netActive = false, netLocalIn = {}, netRemoteIn = {}, netRemoteSeats = [], captureTick = 1; // netRemoteIn[vaga][tick] = teclas
+  var NET_DELAY_MIN = 3, NET_DELAY_MAX = 30, NET_DELAY_MARGIN = 30; // ms de folga alem do ping, pra absorver variacao (jitter)
+  var NET_MAX_AHEAD = 150;      // input/hash remoto mais de N ticks a frente do meu tick nao e de ninguem honesto: descarta
+  var NET_CATCHUP_MS = 250;     // depois de esperar a rede, a simulacao corre pra recuperar ate esse tanto de tempo (o resto e perdido)
+  var NET_HASH_EVERY = 60;      // a cada N ticks (1 s) os PCs comparam um hash do estado
+  var netHashes = {}, netPeerHashes = {}, netDesynced = false;
   function netDelay() {
     var rtt = (SF.net && SF.net.rtt()) || 150; // sem nenhuma amostra ainda (comeco da conexao): chute conservador
     var oneWayMs = rtt / 2 + NET_DELAY_MARGIN;
@@ -2283,31 +2295,80 @@
     if (running && !ended) { paused = true; if (SF.onPause) SF.onPause(true); }
     if (SF.onNetDrop) SF.onNetDrop();
   }
+  // forma canonica de um input: so booleanos + mira finita. O jogador local usa o MESMO objeto normalizado que os outros PCs
+  // reconstroem a partir do JSON, entao nao ha como um valor estranho (NaN, texto, objeto) fazer cada PC enxergar uma coisa.
+  function netKeys(k) {
+    k = k && typeof k === "object" ? k : {};
+    var o = { left: !!k.left, right: !!k.right, up: !!k.up, down: !!k.down, melee: !!k.melee, fire: !!k.fire, throw: !!k.throw, pow: !!k.pow };
+    if (typeof k.mouseAim === "number" && isFinite(k.mouseAim) && Math.abs(k.mouseAim) <= 4) o.mouseAim = k.mouseAim + 0; // +0: -0 vira 0 (JSON perde o sinal)
+    return o;
+  }
+  // resumo do estado da simulacao: se dois PCs divergirem em qualquer coisa que importa (aleatorio, posicoes, vidas) isto muda
+  function stateHash() {
+    var h = 2166136261 >>> 0;
+    function mix(v) { v = Math.round(v * 100) | 0; for (var s = 0; s < 32; s += 8) h = Math.imul(h ^ ((v >>> s) & 255), 16777619); }
+    mix(rngState); mix(tick);
+    for (var i = 0; i < players.length; i++) { var p = players[i]; mix(p.x); mix(p.y); mix(p.health); mix(p.dead ? 1 : 0); }
+    return h >>> 0;
+  }
+  function netDesync(seat, t) { // os PCs divergiram: nao ha como continuar jogando "juntos"
+    netActive = false;
+    if (running && !ended) { paused = true; if (SF.onPause) SF.onPause(true); }
+    if (SF.onNetDesync) SF.onNetDesync(seat, t);
+  }
+  function netCompareHash(t) {
+    var mine = netHashes[t]; if (mine === undefined || netDesynced) return;
+    for (var i = 0; i < netRemoteSeats.length; i++) { var q = netPeerHashes[netRemoteSeats[i]]; if (q && q[t] !== undefined && q[t] !== mine) { netDesynced = true; netDesync(netRemoteSeats[i], t); return; } }
+  }
+  function netHashTick() {
+    var h = stateHash(); netHashes[tick] = h; SF.net.send({ type: "hash", t: tick, h: h }); netCompareHash(tick);
+    var old = tick - NET_HASH_EVERY * 10; // guarda so os ultimos ~10 s
+    delete netHashes[old]; Object.keys(netPeerHashes).forEach(function (s) { delete netPeerHashes[s][old]; });
+  }
   if (SF.net) {
-    SF.net.onInput(function (from, m) { var q = netRemoteIn[from] || (netRemoteIn[from] = {}); q[m.t] = m.k; });
+    SF.net.onInput(function (from, m) {
+      // so aceita input de quem e jogador remoto desta partida, de um tick ainda nao simulado e nao absurdamente a frente (memoria)
+      if (!netActive || !m || netRemoteSeats.indexOf(from) < 0) return;
+      var t = m.t; if (typeof t !== "number" || t % 1 !== 0 || t <= tick || t > tick + NET_MAX_AHEAD) return;
+      var q = netRemoteIn[from] || (netRemoteIn[from] = {}); if (q[t] === undefined) q[t] = netKeys(m.k); // o 1o valor vale
+    });
+    SF.net.onMsg(function (m, from) {
+      if (!netActive || !m || m.type !== "hash" || netRemoteSeats.indexOf(from) < 0) return;
+      var t = m.t; if (typeof t !== "number" || t % 1 !== 0 || t < tick - NET_HASH_EVERY * 10 || t > tick + NET_MAX_AHEAD || typeof m.h !== "number") return;
+      var q = netPeerHashes[from] || (netPeerHashes[from] = {}); q[t] = m.h >>> 0; netCompareHash(t);
+    });
     SF.net.onClose(function () { netDropped(); });
     SF.net.onPeer(function (ev) { if (ev === "leave") netDropped(); });
   }
   function netLocalPlayer() { for (var i = 0; i < players.length; i++) if (players[i].net === "local") return players[i]; return null; }
+  // Mantem exatamente netDelay() ticks de input local ja capturados e enviados a frente da simulacao (ticks T..T+d-1 antes de
+  // rodar o T). Nunca captura alem disso: se a simulacao esta esperando a rede, a fila NAO cresce (o atraso de comando fica em
+  // d ticks, ~60-150 ms, em vez de ate 3 s como antes). Se d muda (ping subiu/desceu), a fila se ajusta sozinha.
   function netCapture() {
     if (!netActive || paused || ended) return;
-    if (captureTick - (tick + 1) >= NET_MAXLEAD) return; // trava antecipadamente se a conexao caiu/atrasou demais (nao deixa a fila crescer sem limite)
-    var lp = netLocalPlayer(), k = lp ? readLocalKeys(lp) : EMPTY_KEYS;
-    netLocalIn[captureTick] = k; SF.net.sendInput(captureTick, k); captureTick++;
+    var d = netDelay(), lp = netLocalPlayer();
+    while (captureTick - (tick + 1) < d) {
+      var k = netKeys(lp ? readLocalKeys(lp) : EMPTY_KEYS);
+      netLocalIn[captureTick] = k; SF.net.sendInput(captureTick, k); captureTick++;
+    }
   }
   function netTickReady() {
     if (!netActive) return true;
     var T = tick + 1;
-    if (captureTick - T < netDelay()) return false;
+    if (netLocalIn[T] === undefined) return false;
     for (var i = 0; i < netRemoteSeats.length; i++) { var q = netRemoteIn[netRemoteSeats[i]]; if (!q || q[T] === undefined) return false; }
     return true;
   }
-  // 1 tick do COOP ONLINE: captura+manda o input local, e so simula se ja tiver o input de TODOS os outros jogadores (senao fica parado nesse tick)
-  function netTick() {
+  // 1 tick do COOP ONLINE: captura+manda o input local e so simula se ja tem o input de TODOS os outros jogadores.
+  // Devolve true se simulou (quem chama usa isso pra NAO gastar o tempo acumulado quando esta esperando a rede).
+  function netStep() {
+    if (paused || ended) return false;
     netCapture();
-    if (paused || ended || !netTickReady()) return;
+    if (!netTickReady()) return false;
     update(); delete netLocalIn[tick];
     netRemoteSeats.forEach(function (s) { if (netRemoteIn[s]) delete netRemoteIn[s][tick]; });
+    if (netActive && tick % NET_HASH_EVERY === 0) netHashTick();
+    return true;
   }
   var last = 0, acc = 0;
   function frame(t) {
@@ -2317,9 +2378,11 @@
     if (music) setAmbientVol(spd); // Sounds.as setAmbientVolume: volume = efeitos x slowmo x 0.1 (cai junto com o slow motion)
     var tickMs = 1000 / 60 / spd;
     while (acc >= tickMs) {
-      if (netActive) netTick(); else if (!paused && !ended) update();
+      if (netActive) { if (!netStep()) break; } // sem o input do outro PC: espera SEM gastar o tempo (recupera depois)
+      else if (!paused && !ended) update();
       acc -= tickMs;
     }
+    if (netActive) { if (paused || ended) acc = 0; else if (acc > NET_CATCHUP_MS) acc = NET_CATCHUP_MS; } // limita a corrida de recuperacao
     render(); rafId = requestAnimationFrame(frame);
   }
   function stopMusic() { if (music) { music.pause(); music = null; } }

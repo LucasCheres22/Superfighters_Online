@@ -92,6 +92,28 @@
   var on = null; // sessao online: { code, seat, host, phase: "lobby" | "pick" | "playing" | "ended", level, kills, picks: {vaga: char} }
   function mapLabel(level) { return level === 8 ? "ALEATORIA" : (MAPS[level] || "?").toUpperCase(); }
   function killsLabel(k) { for (var i = 0; i < ON_KILLS.length; i++) if (ON_KILLS[i][0] === k) return ON_KILLS[i][1]; return String(k); }
+  // Tudo que chega de outro PC e dado nao confiavel (um jogador pode estar com o console aberto mandando o que quiser):
+  // so entra o que passa por estas conferencias, e o que aparece na tela e sempre gerado aqui (nunca o texto que veio de fora).
+  function onInt(v, lo, hi) { return typeof v === "number" && v % 1 === 0 && v >= lo && v <= hi; }
+  function validChar(v) { return onInt(v, 0, ON_CHARS.length - 1); }
+  function validLevel(v) { return ON_MAPS.indexOf(v) >= 0; }
+  function validKills(v) { for (var i = 0; i < ON_KILLS.length; i++) if (ON_KILLS[i][0] === v) return true; return false; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  // monta a partida a partir do "start" do anfitriao reaproveitando so campos conhecidos; null = recusa (ex.: nao me inclui)
+  function cleanMatch(shared, seed) {
+    if (!shared || typeof shared !== "object" || !Array.isArray(shared.roster) || shared.roster.length < 2 || shared.roster.length > 8) return null;
+    if (!(typeof seed === "number" && seed % 1 === 0 && seed >= 0 && seed <= 0xffffffff)) return null;
+    var seen = {}, roster = [], i;
+    for (i = 0; i < shared.roster.length; i++) {
+      var r = shared.roster[i];
+      if (!r || !onInt(r.seat, 0, 7) || seen[r.seat] || !validChar(r.char)) return null;
+      seen[r.seat] = 1; roster.push({ bot: false, seat: r.seat, slot: r.seat + 1, name: "P" + (r.seat + 1), char: r.char, team: 0 });
+    }
+    if (!seen[on.seat]) return null;
+    var mapOk = ON_MAPS.some(function (l) { return l !== 8 && MAPS[l] === shared.map; });
+    if (!mapOk || !validKills(shared.kills)) return null;
+    return { demo: false, roster: roster, p2: false, map: shared.map, mode: "dm", kills: shared.kills, difficulty: 1, bots: 0 };
+  }
   function sendLobby() { if (on && on.host) SF.net.send({ type: "lobby", phase: on.phase === "pick" ? "pick" : "lobby", level: on.level, kills: on.kills }); }
   function sendPick() { if (on) SF.net.send({ type: "pick", char: on.picks[on.seat] || 0 }); }
   function coopShow(title, lines, controls) {
@@ -118,6 +140,7 @@
   }
   function relayFail(e) {
     var m = { sala_cheia: "A sala esta cheia (8 jogadores).", sala_nao_encontrada: "Nao encontrou a sala. Confira o codigo e se o anfitriao ja criou a sala.", codigo_em_uso: "Esse codigo ja esta em uso. Tente de novo.",
+      sala_em_partida: "A partida dessa sala ja comecou. Espere o anfitriao voltar pra sala.", muitas_salas: "Voce ja tem salas demais abertas. Feche as outras e tente de novo.", servidor_cheio: "O servidor esta cheio agora. Tente de novo em alguns minutos.",
       relay_falhou: "O servidor de partidas nao respondeu. Se ele estava parado, o primeiro acesso pode levar ate 1 minuto para acordar. Espere um pouco e tente de novo.",
       tempo_esgotado: "O servidor de partidas demorou demais para responder. Espere cerca de 1 minuto e tente de novo." };
     return m[e] || ("Nao foi possivel conectar ao servidor (" + (e && e.type ? e.type : e) + "). Verifique a conexao e tente de novo.");
@@ -155,17 +178,22 @@
     if (on.phase === "lobby" || on.phase === "pick") renderOnline();
   });
   SF.net.onMsg(function (msg, from) {
-    if (!on) return;
-    if (msg.type === "lobby" && !on.host) { // etapa/fase escolhida pelo anfitriao
+    if (!on || !msg) return;
+    if (msg.type === "lobby" && !on.host) { // etapa/fase escolhida pelo anfitriao (so a vaga 0 manda isso)
+      if (from !== 0 || (msg.phase !== "lobby" && msg.phase !== "pick") || !validLevel(msg.level) || !validKills(msg.kills)) return;
       if (on.phase === "playing" || on.phase === "ended") SF.stop(); // o anfitriao voltou pra sala
-      on.phase = msg.phase === "pick" ? "pick" : "lobby"; on.level = msg.level; on.kills = msg.kills;
+      on.phase = msg.phase; on.level = msg.level; on.kills = msg.kills;
       renderOnline();
     } else if (msg.type === "pick") {
-      on.picks[from] = msg.char || 0;
+      if (!validChar(msg.char) || SF.net.seats().indexOf(from) < 0) return;
+      on.picks[from] = msg.char;
       if (on.phase === "lobby" || on.phase === "pick") renderOnline();
     }
   });
-  SF.net.onStart = function (shared, seed) { if (on && !on.host) beginOnlineMatch(shared, seed); }; // convidado: o anfitriao apertou JOGAR
+  SF.net.onStart = function (shared, seed, from) { // convidado: o anfitriao apertou JOGAR (start de qualquer outra vaga e ignorado)
+    if (!on || on.host || from !== 0 || on.phase === "playing") return;
+    var c = cleanMatch(shared, seed); if (c) beginOnlineMatch(c, seed);
+  };
   SF.net.onClose(function (motivo) { // a sala acabou (anfitriao saiu ou a rede caiu). Na partida quem avisa e o SF.onNetDrop
     if (!on || on.phase === "playing") return;
     on = null; coopShow("SALA ENCERRADA", [motivo === "host_left" ? "O anfitriao saiu da sala." : "A conexao com a sala caiu."], [mkBtn("MENU PRINCIPAL", toMenu, true)]);
@@ -464,6 +492,10 @@
     $("ovtitle").textContent = "CONEXAO PERDIDA"; $("ovextra").textContent = "O outro jogador saiu ou a rede caiu.";
     $("ovtable").innerHTML = ""; coopHide(); buttons([["Menu principal", toMenu, true]]); overlay(true);
   };
+  SF.onNetDesync = function (seat, t) { // COOP ONLINE: o hash do estado do outro PC nao bate com o meu (cada um estaria vendo uma partida diferente)
+    $("ovtitle").textContent = "JOGO FORA DE SINCRONIA"; $("ovextra").textContent = "Os jogos divergiram (vaga " + (seat + 1) + ", tick " + t + "). Voltem pra sala e iniciem de novo.";
+    $("ovtable").innerHTML = ""; coopHide(); buttons([["Menu principal", toMenu, true]]); overlay(true);
+  };
   SF.onPause = function (p) {
     if (!p) { overlay(false); return; }
     $("ovtitle").textContent = "PAUSADO"; $("ovextra").textContent = ""; $("ovtable").innerHTML = "";
@@ -473,7 +505,7 @@
   SF.onEnd = function (r) {
     $("ovtitle").textContent = r.title.toUpperCase(); $("ovextra").textContent = r.extra;
     var html = "<table><tr><th>Jogador</th><th>Abates</th><th>Mortes</th></tr>";
-    r.rows.forEach(function (p) { html += '<tr class="' + (p.you ? "you" : "") + '"><td>' + p.name + (p.team ? " (time " + p.team + ")" : "") + "</td><td>" + p.kills + "</td><td>" + p.deaths + "</td></tr>"; });
+    r.rows.forEach(function (p) { html += '<tr class="' + (p.you ? "you" : "") + '"><td>' + esc(p.name) + (p.team ? " (time " + p.team + ")" : "") + "</td><td>" + p.kills + "</td><td>" + p.deaths + "</td></tr>"; });
     $("ovtable").innerHTML = html + "</table>";
     if (on) { // ONLINE: a sala continua aberta; o anfitriao decide voltar pra sala (os convidados seguem)
       on.phase = "ended";

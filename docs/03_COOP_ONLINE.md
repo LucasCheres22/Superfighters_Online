@@ -1,71 +1,64 @@
-# COOP ONLINE (não existe no original — adição pedida pelo usuário)
+# ONLINE (versus ate 8 jogadores) - nao existe no original; adicao pedida pelo usuario
 
 ## Arquitetura
-- **P2P WebRTC via PeerJS** (`https://cdn.jsdelivr.net/npm/peerjs@1.5.4`, `defer`; servidor público grátis da PeerJS só para sinalização). Requer internet; offline o botão avisa. Sem TURN → pode falhar em NAT/firewall restritivo.
-- **Lockstep determinístico**: os dois PCs simulam TUDO; só trocam teclas por tick (`SF.net.sendInput(tick, k)`).
-- Escolhas do usuário: P2P/WebRTC + lockstep (não host autoritativo, não rollback). Rollback GGPO foi oferecido e recusado (ficou o atraso adaptativo).
+- **Relay WebSocket** (`relay/server.js`, Node + `ws`): salas por codigo, ate 8 vagas (vaga 0 = anfitriao). So repassa mensagens; NAO simula o jogo.
+- **Cliente** (`src/net.js`): `SF.net` (host/join/send/sendTo/sendInput/onMsg/onInput/onPeer/onClose/rtt). A URL do relay vem de `window.SF_RELAY_URL` (em `index.html`).
+- **Lockstep deterministico** (`src/game.js`): TODOS os PCs simulam a partida inteira; so trocam as teclas de cada tick. Cada PC executa o tick T so quando tem o input de todos os jogadores para o T.
+- Hospedagem atual: site na Vercel; relay rodando no PC do anfitriao atras de um tunel ngrok (`relay/iniciar-jogo-online.bat`, regiao `sa`). O Render (`render.yaml`) tambem serve, mas fica longe do Brasil (200-600 ms).
 
-## Fluxo
-1. Menu → botão COOP ONLINE → HOSPEDAR (código de 5 chars, prefixo `sfhtml5-`) / ENTRAR COM CODIGO.
-2. Após conectar, só o anfitrião percorre as telas normais (2 players: plate P1 = anfitrião, P2 = convidado; anfitrião escolhe os dois personagens). `launch()` envia `lastGame` (roster com `net:'host'|'guest'`) + seed (`SF.net.sendStart`); cada lado resolve `net` para `'local'|'remote'` e chama `SF.start` com `net:true, seed`.
-3. Convidado só espera (`SF.net.onStart`); `onlineGuest=true` esconde "Jogar de novo".
+## Fluxo (menu.js)
+1. COOP ONLINE -> HOSPEDAR PARTIDA (codigo de 6 chars) / ENTRAR COM CODIGO.
+2. SALA (lista de vagas; anfitriao aperta INICIAR com 2+ jogadores) -> ESCOLHA (cada um escolhe o personagem; o anfitriao escolhe fase e pontos) -> JOGAR (so o anfitriao) -> partida.
+3. Fim: o anfitriao pode VOLTAR A SALA e os convidados seguem. Quem sai no meio derruba a partida dos outros ("CONEXAO PERDIDA"); anfitriao sair encerra a sala.
+4. Limites: 1 jogador por PC, sem bots, modo fixo "dm", nao entra no meio da partida (o relay trava a sala durante a partida).
 
-## Núcleo (game.js)
-- `reset()` faz `seedRng(cfg.seed ?? aleatório)` e `netActive=!!cfg.net`.
-- `virtualKeys(p)`: em net, humano usa `netLocalIn[tick]`/`netRemoteIn[tick]` (buffers), nunca teclado ao vivo dentro de `update()`.
-- `netCapture()` captura/envia a tecla local por tick real; `netTickReady()` exige `captureTick - T >= netDelay()` e `netRemoteIn[T]`; `netTick()` = capture + (update se pronto). `frame()` e `step()` usam `netTick()`.
-- **Atraso adaptativo**: `net.js` faz ping/pong (a cada 2 s; `SF.net.rtt()` = mínimo das últimas 6 amostras); `netDelay()=clamp(ceil((rtt/2+25ms)/16.67), 2, 30)` ticks. Cada lado ajusta o seu independentemente (não afeta determinismo). Conexão local fica em 2 ticks (~33 ms).
-- Se a rede atrasar mais que o buffer, o jogo **congela** esperando (não desincroniza). `NET_MAXLEAD=180`.
-- Queda de conexão: `SF.net.onClose` → pausa + `SF.onNetDrop` (overlay "CONEXAO PERDIDA").
-- `net.js` aceita múltiplos callbacks (`onInput`, `onClose` são listas — menu.js e game.js usam ambos).
+## Lockstep (game.js) - como funciona e por que travava
+- `netCapture()` mantem **exatamente `netDelay()` ticks de input local ja enviados a frente** da simulacao. Nunca captura alem disso.
+- `netStep()`: captura + simula SO se tem o input de todas as vagas remotas (`netRemoteSeats`, `netRemoteIn[vaga][tick]`). Devolve se simulou.
+- `frame()`: se falta input do outro PC, **espera sem gastar o tempo acumulado** (`break`) e depois corre pra alcancar, ate `NET_CATCHUP_MS` (250 ms). Pausa/fim zera o acumulador.
+- `netDelay() = clamp(ceil((rtt/2 + 30 ms)/16.67), 3, 30)` ticks; `rtt` = percentil 75 das ultimas 8 amostras do pior par (`net.js`). Cada PC ajusta o seu independentemente.
+- **Bug que fazia o jogo "todo travado" (corrigido):** a captura rodava a cada frame mesmo com a simulacao parada esperando a rede, e so parava em 180 ticks. Resultado: ate **3 s de atraso entre apertar a tecla e ver o efeito** (`captureTick - tick = 181`) e o tempo de espera era descartado (camera lenta). Agora o atraso de comando e fixo (`netDelay`, ~50-150 ms) e a espera e recuperada.
+- Diagnostico: `SF.api.netDebug()` no console -> `tick`, `lead` (deve ser ~`delayTicks`, nunca perto de 180), `rtt`, `delayTicks`, `netReady`, `remoteNext` (`[vaga, tem input do proximo tick, quantos guardados, maior tick]`), `desynced`.
+- **Teste em duas abas do mesmo navegador:** a aba em segundo plano pausa o `requestAnimationFrame`; o lockstep anda na velocidade da aba mais lenta, entao o jogo trava. Use duas JANELAS lado a lado (as duas visiveis), dois navegadores, ou dois PCs.
 
-## Regras para não quebrar o determinismo
-- Simulação só com `rand()`; nada de `Math.random()`, `Date.now()`, `performance.now()` dentro de `update()`.
-- Trigonometria só com `dsin`/`dcos`/`datan2`/`dhypot` (game.js, após `seedRng`), nunca `Math.sin/cos/atan2/hypot`: os motores de navegador podem arredondar o último bit de forma diferente.
+## Deteccao de dessincronia
+- A cada `NET_HASH_EVERY` (60) ticks cada PC manda `{type:"hash", t, h}` (hash de `rngState`, tick, x/y/vida/morto de cada jogador) e compara com o dos outros. Se diferir: `SF.onNetDesync(vaga, tick)` -> pausa, overlay "JOGO FORA DE SINCRONIA" e botao Menu principal. Nada de continuar "jogando" em partidas diferentes sem avisar.
+
+## Regras para nao quebrar o determinismo
+- Simulacao so com `rand()` (seedada em `reset()` pelo `seed` do anfitriao); nada de `Math.random()`, `Date.now()`, `performance.now()` dentro de `update()`.
+- Trigonometria so com `dsin`/`dcos`/`datan2`/`dhypot` (game.js, logo apos `seedRng`), nunca `Math.sin/cos/atan2/hypot`: motores de navegador diferentes podem arredondar o ultimo bit de forma diferente. (Benchmark: custa o mesmo que `Math.sin`.)
 - Nada que dependa de frame rate real (render) pode consumir `rand()`.
+- Todo input passa por `netKeys()` (so booleanos + `mouseAim` finito, `-0` vira `0`): o jogador local usa o MESMO objeto normalizado que os remotos reconstroem do JSON.
 - Qualquer estado novo por jogador deve entrar no reset/respawn.
-- Teste padrão: dois tabs (host `SF.net.host`, guest `SF.net.join`), `onStart` do guest, `SF.start` do host, `step()` alternado nos dois e comparar `players()` (x,y,health) no MESMO tick — deve ser idêntico bit a bit. Cuidado: aba fronteada também roda rAF e avança ticks sozinha.
 
-## Limitações conhecidas
-- Pausa (Esc) congela os dois mas só quem apertou vê o overlay.
-- Convidado não escolhe o próprio personagem/time.
-- Queda no meio da partida não retoma.
-- Teste visual de movimento em tempo real nas duas abas não foi feito (painel oculto); lógica validada por `step()`.
-- Hospedar em site público (ex.: Vercel) é tecnicamente trivial (estático, HTTPS ok), mas o `LEIAME` diz que os assets são da Mythologic e "não redistribua" — decisão do usuário (avisado).
+## Seguranca (revisao de 2026-11-15)
+O relay e publico: qualquer um abre um WebSocket. Falhas encontradas e provadas contra o relay antigo (script de ataque), e como ficou:
+| Falha (antes) | Efeito | Correcao |
+|---|---|---|
+| Mensagem maior que o limite -> `RangeError` sem tratador de `error` | **derrubava o processo do relay** (todas as salas) com 1 mensagem | `ws.on("error")`, `maxPayload` 8 KB, `uncaughtException` logado |
+| URL malformada (`GET //[`) -> `new URL` lanca | **derrubava o processo** | `try/catch` + resposta de erro |
+| Convidado enviava `start`/`lobby` como se fosse o anfitriao | forcar partida/voltar pra sala nos outros | relay descarta `start`/`lobby` que nao vem da vaga 0; cliente tambem confere `from === 0` |
+| Sem limite de taxa | inundacao/amplificacao (1 msg -> 7 destinos) | token bucket por conexao (150 msg/s, 32 KB/s) + expulsao de quem insiste |
+| Forca bruta de codigos sem bloqueio | achar e entrar em salas alheias | 12 falhas/min por IP -> bloqueio de 5 min; codigo de 6 chars (1 bi) sorteado com `crypto` |
+| Qualquer site podia conectar (sem Origin) | outros sites usando o relay / CSWSH | lista de origens: `https://superfighters*.vercel.app`, localhost e `ALLOWED_ORIGINS` |
+| Salas e conexoes ilimitadas por IP | esgotar memoria/CPU | max 16 conexoes, 4 salas, 90 conexoes/min por IP; 200 salas no total |
+| Tipos/formatos livres | lixo repassado, memoria no cliente | so `input/ping/pong/hash/pick/lobby/start` com formato validado |
+| Entrar no meio da partida | vaga fantasma no lockstep | sala travada apos `start`, destravada por `lobby` |
+| Pagina de saude mostrava nº de salas | vazamento | resposta fixa "ok" |
+Cliente:
+- Input remoto: so de vaga que e jogador remoto, tick inteiro entre `tick+1` e `tick+150` (descarta o resto, sem crescer memoria), 1o valor vale, normalizado por `netKeys()`.
+- `menu.js`: `lobby`/`pick`/`start` so com valores da lista (personagem, fase, pontos); `start` e reconstruido (`cleanMatch`): nomes, modo e bots vem do codigo local, nunca do texto que chegou; nomes escapados no placar (`esc`).
+- Limite inerente do lockstep: o PC de cada jogador ve tudo e um cliente modificado pode trapacear (ex.: macros). O hash detecta divergencia, nao trapaca "coerente".
+- Atras de proxy (ngrok/Render) o IP real vem de `X-Forwarded-For`: `TRUST_PROXY_HOPS` (padrao 1 = o ultimo valor da lista; o ngrok acrescenta o IP real). Verificado no inspetor do ngrok. Se usar outro proxy, ajuste ou os limites por IP vao tratar todos como um so.
+- Variaveis do relay: `PORT`, `ALLOWED_ORIGINS` (lista separada por virgula), `TRUST_PROXY_HOPS`, `MAX_ROOMS`, `MAX_CONN_PER_IP`, `MAX_ROOMS_PER_IP`.
+- Vercel (`vercel.json`): `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. CSP nao foi aplicada (o `index.html` tem script inline e carrega muitos assets; quebraria o jogo sem teste real).
 
-## Teste de sincronizacao (2026-11-15)
-- Duas abas (host e convidado) no mesmo PC, sinalizacao PeerJS publica, seed 77, entradas de teclado diferentes nos dois lados.
-- Resultado: conexao P2P abriu (RTT ~0.6 ms, local). Estados do P1 e P2 identicos bit a bit nos ticks comparados (ex.: 1532, 1534, ..., 1544).
-- Armadilha achada no teste: se o convidado comeca DEPOIS que o host ja enviou teclas, as teclas antigas sao descartadas e o convidado fica parado no tick 0. No fluxo real do menu isso nao acontece (host manda `start` antes das teclas, canal ordenado).
-- Ainda falta: teste entre dois PCs em redes diferentes (NAT) - o STUN publico cobre a maioria, mas sem TURN pode falhar em redes restritivas.
-
-## Deploy na Vercel (2026-11-15)
-- Projeto `superfighters` na conta lucascheres22 (time lucas-cheres-projects, plano Hobby). Producao: https://superfighters-omega.vercel.app
-- Verificado no navegador: menu carrega, SF e PeerJS carregam, sem erros no console; criacao de sala (HOSPEDAR) funciona em HTTPS (codigo gerado).
-- Ainda nao testado: entrar com o codigo a partir de outro PC/rede.
-
-## Relay para o Render (2026-11-15)
-- Pasta `relay/` (server.js + package.json, depende de `ws`). Salas por codigo (`?room=CODE&role=host|guest`); repassa mensagens do outro lado; health check em `/`.
-- `src/net.js`: se `window.SF_RELAY_URL` estiver definido (ex.: `wss://superfighters-relay.onrender.com`), host/join usam o relay (WebSocket) com a mesma interface de conexao; senao segue o PeerJS (P2P).
-- `render.yaml` (raiz do projeto): blueprint do Render com `rootDir: relay`, plano free.
-- Teste local (2 abas, relay em ws://localhost:8787): pareamento ok, RTT medido pelo relay, lockstep identico nos ticks 260-532 (sem combate).
-- Correcoes no caminho do online: (1) boot do menu nao inicia a demonstracao quando ja ha conexao; (2) SF.hideMenu exposto para testes (o menu aberto engole teclas e pode iniciar uma partida local).
-
-## Desync entre PCs (2026-11-15)
-- Causa provável: `Math.sin/cos/atan2/hypot` têm precisão definida pela implementação (o padrão JS só exige aproximação). Chrome, Firefox e Safari (ou versões/CPUs diferentes) podem devolver o último bit diferente. A simulação usa essas funções em ~100 pontos de `game.js`, então os estados divergem com o tempo mesmo com mesma semente e mesmas teclas. Duas abas no mesmo navegador não reproduzem isso.
-- Correção: `game.js` usa `dsin/dcos/datan2/dhypot`, feitas só com `+ - * /` e `Math.sqrt` (IEEE 754, idênticas em qualquer motor). Precisão medida no Node: erro < 3e-14 em seno/cosseno (entradas ±100) e ~1e-15 em atan2.
-- Teste (mesma máquina e navegador, servidor local + relay no Render, 2 abas, teclas aleatórias com combate): 3965 ticks comparados pelo convidado, 0 divergências (hash das posições e vidas de todos os jogadores em cada tick). Antes da correção, esse teste não tinha como acusar o problema.
-- Armadilha de teste achada: `SF.start` faz merge com o `cfg` anterior. Se o `start` não traz o `map`/`roster` completos, cada lado usa o valor residual (no teste, o mapa do demo) e diverge já no tick 1. O menu manda o `lastGame` completo, então isso não acontece no fluxo real.
-- Não verificado: divergência entre dois navegadores/PCs diferentes. Só dá para confirmar com dois PCs reais jogando.
-- Ainda nao validado: dessincronia relatada entre dois PCs reais (possivel causa: diferencas de motor/CPU em Math.sin/cos ou latencia). Proximo teste: partida com combate em dois PCs diferentes.
-
-## Versus online ate 8 jogadores (2026-11-15)
-- Relay (`relay/server.js`): sala com ate 8 vagas (vaga 0 = anfitriao; convidados entram nas vagas 1 a 7). Toda mensagem recebe `from` (vaga de quem mandou). Com `to` (numero) vai so pra essa vaga; sem `to` vai pra todos. Mensagens `sys` so vem do servidor (`welcome`, `peer_join`, `peer_left`, `room_closed`, `erro`).
-- Transporte (`src/net.js`): so relay (o P2P/PeerJS foi removido, nao suporta 8 jogadores). `SF.net.seats()`, `send`, `sendTo`, `sendInput`, `sendStart`, `onMsg`, `onInput`, `onPeer`, `onClose`.
-- Fluxo (`src/menu.js`): HOSPEDAR / ENTRAR COM CODIGO -> SALA (lista de vagas; o anfitriao aperta INICIAR com 2+ jogadores) -> ESCOLHA (cada um escolhe o personagem; o anfitriao escolhe fase e pontos pra vencer) -> JOGAR (so o anfitriao) -> partida. Ao fim, o anfitriao pode voltar pra sala e os convidados seguem.
-- Lockstep (`src/game.js`): cada PC espera o input de TODAS as vagas remotas (`netRemoteSeats`, `netRemoteIn[vaga][tick]`). O jogador local usa sempre o teclado 1 (`readLocalKeys`), e o passageiro de foguete/poltrona le o input do dono pelo `virtualKeys`.
-- Saida no meio da partida: quem sobra pausa e ve "CONEXAO PERDIDA"; o anfitriao sair encerra a sala pra todos.
-- Limitacoes: 1 jogador por PC; so humanos (sem bots no online); modo fixo "dm" (todos contra todos); o sinal de HUD so tem arte para P1 e P2 (vagas 3 a 8 usam o sinal de P2); nao entra no meio da partida.
-- Testado com relay local e 2, 4 e 8 abas no mesmo navegador: 9a entrada recusada ("sala cheia"); 8 jogadores com ~4000 ticks comparados nos convidados e zero divergencias, com combate; saida do anfitriao -> "SALA ENCERRADA" nos convidados; saida de convidado na partida -> "CONEXAO PERDIDA" no anfitriao.
-- Nao testado: dois PCs reais pelo relay do Render; o botao VOLTAR A SALA depois do fim da partida (UI nao exercitada).
-- Deploy: o relay do Render precisa ser atualizado (push do repositorio) ANTES do site na Vercel, senao o protocolo novo nao conversa com o relay antigo.
+## Testes feitos (2026-11-15)
+- Relay (scripts de ataque antes/depois): oito vetores; antes 2 derrubavam o processo; depois todos barrados e o relay continua vivo. Fluxo normal: 8 jogadores, 9o recebe `sala_cheia`, 210/210 inputs entregues, `sala_em_partida`, mensagens invalidas descartadas.
+- Lockstep (2 abas + relay local, teclas aleatorias com combate): 1800 ticks, 0 divergencias, `lead` max 3 (antes 181). Com 3 jogadores: 1500 ticks por par, 0 divergencias.
+- Convidado parado: o anfitriao avanca no maximo `delay` ticks e para (nao acumula).
+- Laco real (`frame()` do host + convidado travando 120 ms por segundo): 58,8 ticks/s, `lead` fixo em 3, sem desync.
+- Input forjado (t absurdo, antigo, nao inteiro, `__proto__`, `k` com lixo, NaN): so o t valido foi guardado, normalizado; `Object.prototype` limpo.
+- Dessincronia provocada (P1 +5 px so no anfitriao): os dois lados mostraram "JOGO FORA DE SINCRONIA" no tick 1980.
+- `start` forjado no convidado (de outra vaga, personagem/mapa/pontos/seed invalidos, nao me inclui, vaga duplicada, 1 jogador): todos ignorados; campos estranhos (nome com HTML, modo, bots) normalizados.
+- Nao testado: dois PCs reais em redes diferentes com o relay corrigido; 8 jogadores com o lockstep novo (so o relay foi testado com 8; o lockstep com 3); botao VOLTAR A SALA com varios convidados.

@@ -11,7 +11,13 @@ window.SF = window.SF || {};
   var pendingJoin = null, pendingErr = null; // callbacks da tentativa de entrar (host/join) ate a sala confirmar
 
   function relayBase() { var u = window.SF_RELAY_URL; return u ? String(u).replace(/\/+$/, "") : null; }
-  function randCode(n) { var s = "", abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for (var i = 0; i < n; i++) s += abc[(Math.random() * abc.length) | 0]; return s; }
+  // codigo da sala: 6 chars de um alfabeto de 32 (1 bilhao de combinacoes) sorteados com crypto (256 % 32 == 0, sem vies)
+  function randCode(n) {
+    var abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s = "", buf = new Uint8Array(n), i;
+    try { (window.crypto || window.msCrypto).getRandomValues(buf); } catch (e) { for (i = 0; i < n; i++) buf[i] = (Math.random() * 256) | 0; }
+    for (i = 0; i < n; i++) s += abc[buf[i] % abc.length];
+    return s;
+  }
   function rawSend(obj) { if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(obj)); } catch (e) {} }
   function sendPing() { rawSend({ type: "ping", t: performance.now() }); }
   function addSeat(s) { if (seats.indexOf(s) < 0) seats.push(s); seats.sort(function (a, b) { return a - b; }); }
@@ -49,9 +55,14 @@ window.SF = window.SF || {};
     var msg = null; try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (!msg || typeof msg !== "object") return;
     if (msg.type === "sys") { onSys(msg); return; }
-    var from = msg.from;
-    if (msg.type === "ping") { rawSend({ type: "pong", t: msg.t, to: from }); return; }
-    if (msg.type === "pong") { var arr = rttSamples[from] || (rttSamples[from] = []); arr.push(performance.now() - msg.t); if (arr.length > 6) arr.shift(); return; }
+    var from = msg.from; // o relay carimba a vaga de quem mandou; sem ela (ou fora de 0..7) a mensagem nao e de ninguem da sala
+    if (typeof from !== "number" || from % 1 !== 0 || from < 0 || from > 7) return;
+    if (msg.type === "ping") { if (typeof msg.t === "number") rawSend({ type: "pong", t: msg.t, to: from }); return; }
+    if (msg.type === "pong") {
+      var sample = typeof msg.t === "number" ? performance.now() - msg.t : -1;
+      if (sample >= 0 && sample < 10000) { var arr = rttSamples[from] || (rttSamples[from] = []); arr.push(sample); if (arr.length > 8) arr.shift(); }
+      return;
+    }
     if (msg.type === "input") { fire(inputCbs, from, msg); return; }
     if (msg.type === "start" && SF.net.onStart) { SF.net.onStart(msg.cfg, msg.seed, from); return; }
     fire(msgCbs, msg, from);
@@ -72,12 +83,13 @@ window.SF = window.SF || {};
     return true;
   }
 
-  // RTT (ms) por par: o pior dos melhores (o atraso do lockstep precisa cobrir o jogador mais lento). null sem amostras ainda.
+  // RTT (ms) por par: percentil 75 das ultimas amostras (cobre o jitter; o minimo subestimava e fazia o jogo engasgar), e o
+  // pior par vale (o atraso do lockstep precisa cobrir o jogador mais lento). null sem amostras ainda.
   function rtt() {
     var worst = null;
     Object.keys(rttSamples).forEach(function (s) {
       var arr = rttSamples[s]; if (!arr || !arr.length) return;
-      var best = Math.min.apply(null, arr); if (worst === null || best > worst) worst = best;
+      var v = arr.slice().sort(function (a, b) { return a - b; })[Math.floor(arr.length * 0.75)]; if (worst === null || v > worst) worst = v;
     });
     return worst;
   }
@@ -92,7 +104,7 @@ window.SF = window.SF || {};
     seats: function () { return seats.slice(); },
     // cria a sala; onCode(codigo) quando estiver pronta, onError(motivo) se falhar
     host: function (onCode, onError) {
-      var code = randCode(5);
+      var code = randCode(6);
       if (!openSocket(code, "host", function () { onCode(code); }, onError)) return;
     },
     // entra na sala pelo codigo; onJoined(vaga) quando o relay aceitar, onError(motivo) se falhar
