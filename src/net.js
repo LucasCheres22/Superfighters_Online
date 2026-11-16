@@ -63,6 +63,9 @@ window.SF = window.SF || {};
     var url = base.replace(/^http/, "ws") + "/?room=" + encodeURIComponent(code) + "&role=" + role;
     try { ws = new WebSocket(url); } catch (e) { onError && onError("relay_invalido"); return false; }
     pendingJoin = onJoin || null; pendingErr = onError || null;
+    // sem resposta em 25 s (servidor dormindo no plano gratis do Render, rede travada): desiste em vez de ficar preso
+    var sock = ws;
+    setTimeout(function () { if (ws === sock && pendingErr && sock.readyState !== 1) { var e = pendingErr; pendingJoin = pendingErr = null; try { sock.close(); } catch (x) {} e("tempo_esgotado"); } }, 25000);
     ws.onmessage = onMessage;
     ws.onerror = function () { if (pendingErr) { var e = pendingErr; pendingJoin = pendingErr = null; e("relay_falhou"); } };
     ws.onclose = function () { if (pendingErr) { var e = pendingErr; pendingJoin = pendingErr = null; e("conexao_fechada"); } else endRoom("conexao_caiu"); };
@@ -81,6 +84,8 @@ window.SF = window.SF || {};
 
   SF.net = {
     available: function () { return !!relayBase(); },
+    // acorda o relay antes de criar/entrar na sala (plano gratis do Render dorme sem uso e leva ~1 min pra acordar)
+    warm: function () { var b = relayBase(); if (!b) return; try { fetch(b.replace(/^ws/, "http") + "/", { mode: "no-cors", cache: "no-store" }).catch(function () {}); } catch (e) {} },
     isHost: function () { return hostFlag; },
     connected: function () { return joined && !!ws && ws.readyState === 1; },
     mySeat: function () { return mySeat; },

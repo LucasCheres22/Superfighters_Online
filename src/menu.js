@@ -112,11 +112,14 @@
   function leaveOnline() { try { SF.net.close(); } catch (e) {} on = null; coopHide(); showMenu(); }
   function coopFail(msg) { try { SF.net.close(); } catch (e) {} on = null; coopShow("COOP ONLINE", [msg], [mkBtn("VOLTAR", openCoopMenu, true)]); }
   function openCoopMenu() {
+    if (SF.net.warm) SF.net.warm();
     coopShow("COOP ONLINE", ["Versus online de ate 8 jogadores, em outros PCs e redes, pela internet.", "Cada um abre o jogo e entra pelo codigo da sala."],
       [mkBtn("HOSPEDAR PARTIDA", coopHost, true), mkBtn("ENTRAR COM CODIGO", coopJoinPrompt), mkBtn("CANCELAR", function () { coopHide(); overlay(false); })]);
   }
   function relayFail(e) {
-    var m = { sala_cheia: "A sala esta cheia (8 jogadores).", sala_nao_encontrada: "Nao encontrou a sala. Confira o codigo e se o anfitriao ja criou a sala.", codigo_em_uso: "Esse codigo ja esta em uso. Tente de novo." };
+    var m = { sala_cheia: "A sala esta cheia (8 jogadores).", sala_nao_encontrada: "Nao encontrou a sala. Confira o codigo e se o anfitriao ja criou a sala.", codigo_em_uso: "Esse codigo ja esta em uso. Tente de novo.",
+      relay_falhou: "O servidor de partidas nao respondeu. Se ele estava parado, o primeiro acesso pode levar ate 1 minuto para acordar. Espere um pouco e tente de novo.",
+      tempo_esgotado: "O servidor de partidas demorou demais para responder. Espere cerca de 1 minuto e tente de novo." };
     return m[e] || ("Nao foi possivel conectar ao servidor (" + (e && e.type ? e.type : e) + "). Verifique a conexao e tente de novo.");
   }
   function coopHost() {
