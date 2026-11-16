@@ -2371,10 +2371,30 @@
     return true;
   }
   var last = 0, acc = 0;
+  // ONLINE com a aba escondida (Alt-Tab, outra aba, janela minimizada): o navegador PAUSA o requestAnimationFrame e segura os
+  // timers da pagina (1 por segundo). No lockstep isso travava TODOS os jogadores sempre que UM deles saia da aba. Um Worker
+  // (os timers dele nao sao segurados) continua chamando pump() enquanto a aba esta escondida; so nao desenha.
+  var bgWorker = null;
+  function bgStart() {
+    if (bgWorker || typeof Worker === "undefined" || typeof Blob === "undefined") return;
+    try {
+      var src = "var t=null;onmessage=function(e){if(e.data==='start'){if(!t)t=setInterval(function(){postMessage(0)},16)}else{clearInterval(t);t=null}}";
+      bgWorker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+      // assume sempre que o laco normal ficou >50 ms parado (aba escondida, janela coberta/minimizada...; document.hidden nem
+      // sempre avisa). Com o requestAnimationFrame saudavel pump.lt e atualizado a cada ~16 ms e o Worker nao faz nada;
+      // mesmo que os dois rodem, o tempo e medido pelo relogio real (acc), entao os ticks nao passam de 60 por segundo.
+      bgWorker.onmessage = function () { var n = performance.now(); if (running && netActive && n - (pump.lt || 0) > 50) pump(n); };
+      bgWorker.postMessage("start");
+    } catch (e) { bgWorker = null; }
+  }
+  function bgStop() { if (bgWorker) { try { bgWorker.terminate(); } catch (e) {} bgWorker = null; } }
   function frame(t) {
     if (!running) return;
+    pump(t); render(); rafId = requestAnimationFrame(frame);
+  }
+  function pump(t) { // tudo do quadro menos desenhar: usado pelo requestAnimationFrame (frame) e pelo Worker com a aba escondida
     acc += Math.min(100, t - last); last = t;
-    var spd = slowSpeed(Math.min(100, t - (frame.lt || t)) * 24 / 1000); frame.lt = t; SF.timeScale = spd;
+    var spd = slowSpeed(Math.min(100, t - (pump.lt || t)) * 24 / 1000); pump.lt = t; SF.timeScale = spd;
     if (music) setAmbientVol(spd); // Sounds.as setAmbientVolume: volume = efeitos x slowmo x 0.1 (cai junto com o slow motion)
     var tickMs = 1000 / 60 / spd;
     while (acc >= tickMs) {
@@ -2383,7 +2403,6 @@
       acc -= tickMs;
     }
     if (netActive) { if (paused || ended) acc = 0; else if (acc > NET_CATCHUP_MS) acc = NET_CATCHUP_MS; } // limita a corrida de recuperacao
-    render(); rafId = requestAnimationFrame(frame);
   }
   function stopMusic() { if (music) { music.pause(); music = null; } }
   // volume do loop ambiente = volume de efeitos x fator de slowmo x 0.1 (igual ao original)
@@ -2397,7 +2416,8 @@
     // durante a partida o original toca o LOOP AMBIENTE (Sounds.as: InMenu false -> playAmbient), nao o tema (que e so do menu).
     if (cfg.music && !cfg.demo) { music = snd(SOUND_FILES.ambient).cloneNode(); music.loop = true; setAmbientVol(1); var pr = music.play(); if (pr && pr.catch) pr.catch(function () {}); }
     last = performance.now(); cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame);
+    if (netActive) bgStart(); else bgStop();
   };
-  SF.stop = function () { running = false; cancelAnimationFrame(rafId); stopMusic(); canvas.style.display = "none"; };
+  SF.stop = function () { running = false; cancelAnimationFrame(rafId); bgStop(); stopMusic(); canvas.style.display = "none"; };
   SF.setPaused = function (b) { paused = !!b; };  SF.setSfxVolume = function (v) { cfg.sfxVol = v; };
 })();
